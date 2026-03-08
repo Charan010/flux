@@ -14,6 +14,11 @@ void BitWriter::write_bit(int b){
     }
 }
 
+
+void BitReader::align_to_byte(){
+    bits = 0 ;
+}
+
 void BitWriter::write_byte(uint8_t b){
     if(bits == 0)
         out.put(b);
@@ -21,10 +26,6 @@ void BitWriter::write_byte(uint8_t b){
     else
         for(int i = 7; i >= 0 ; i--)
             write_bit((b >> i) & 1);
-}
-
-size_t BitWriter::get_bits_written()const{
-    return bits_written;
 }
 
 void BitWriter::flush(){
@@ -44,25 +45,33 @@ BitReader::BitReader(const std::string& file)
 
 int BitReader::read_bit(){
     if(bits == 0){
-        buffer = in.get();
+        int c = in.get();
+
+        if(c == EOF)
+            return -1;
+
+        buffer = static_cast<uint8_t>(c);
         bits = 8;
     }
 
     int bit = (buffer >> 7) & 1;
     buffer <<= 1;
-
     bits--;
+
     return bit;
 }
 
+
 uint8_t BitReader::read_byte(){
+    if(bits == 0)
+        return static_cast<uint8_t>(in.get());
+
     uint8_t b = 0;
     for(int i = 0 ; i < 8 ; ++i)
         b = (b << 1) | read_bit();
 
     return b;
 }
-
 
 
 

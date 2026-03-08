@@ -1,3 +1,6 @@
+#ifndef FREQUENCY_COUNTER_H
+#define FREQUENCY_COUNTER_H
+
 #pragma once
 #include "threadpool.h"
 #include "chunk.h"
@@ -31,3 +34,5 @@ private:
     std::condition_variable done_cv;
     std::mutex done_mtx;
 };
+
+#endif

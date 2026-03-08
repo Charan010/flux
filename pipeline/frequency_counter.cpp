@@ -32,22 +32,14 @@ void FrequencyCounter::submit_chunk(const Chunk& chunk){
 
         {
             std::lock_guard<std::mutex> lock(freq_mtx);
-
-            for(int i = 0 ; i < 256 ; ++i)
+            for(int i = 0; i < 256; ++i)
                 global_freq[i] += local[i];
         }
 
         pending--;
-        if(pending == 0){
-
-            std::lock_guard<std::mutex> lock(done_mtx);
-                done_cv.notify_one();
-        }
-
+        done_cv.notify_one();  
     });
-
 }
-
 void FrequencyCounter::wait(){
 
     std::unique_lock<std::mutex> lock(done_mtx);

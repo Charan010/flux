@@ -4,8 +4,6 @@
 
 struct BitWriter {
 
-    size_t  bits_written = 0;
-
     public:
 
     std::ofstream out;
@@ -16,7 +14,6 @@ struct BitWriter {
     void write_bit(int b);
     void write_byte(uint8_t b);
     void flush();
-    size_t get_bits_written()const;
     
 };
 
@@ -28,4 +25,6 @@ struct BitReader {
     BitReader(const std::string& file);
     int read_bit();
     uint8_t read_byte();
+    void align_to_byte();
+
 };

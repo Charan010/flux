@@ -1,43 +1,40 @@
-#pragma once
+#ifndef HUFFMAN_H
+#define HUFFMAN_H
 
+#include <cstdint>
+#include <array>
+#include <queue>
 #include <unordered_map>
 #include <string>
-#include <queue>
-#include <vector>
-#include <iostream>
-#include <cstdint>
 
+#include "bit_io.h"
+
+using FrequencyTable = std::array<uint64_t,256>;
 
 struct Node {
-    char ch;
-    int freq;
+    uint8_t ch;
+    uint64_t freq;
     Node* left;
     Node* right;
 
-     Node(char c, int f);
-     Node(Node* l, Node* r);
+    Node(uint8_t c, uint64_t f);
+    Node(Node* l, Node* r);
 };
 
 struct Compare {
     bool operator()(Node* a, Node* b);
 };
 
+Node* build_huffman_tree(const FrequencyTable& freq);
 
-Node* build_huffman_tree(const std::array<uint32_t,256>& freq);
+void build_codes(Node* root_node, std::string code, std::array<std::string,256>& table);
 
-void free_tree(Node *root);
+void write_tree(Node* root, BitWriter& bw);
+Node* read_tree(BitReader& br);
 
-void build_codes(Node* root_node, std::string code, std::unordered_map<char, std::string>& table);
+void free_tree(Node* root);
 
-std::string encode(const std::string& text, std::unordered_map<char, std::string>& table);
+uint32_t read_uint32(BitReader& br);
+void write_uint32(BitWriter& bw, uint32_t x);
 
-
-std::string decode(const std::string& bits,Node* root);
-
-void benchmark(const std::string& text, const std::unordered_map<char, int>& freq, const std::unordered_map<char, std::string>& table, 
-    const std::string& encoded_bits);
-
-void write_compressed_file(const std::string& file, Node* root, const std::string& encoded_bits, 
-    uint32_t original_len);
-
-std::string read_compressed_file(const std::string& file);
+#endif

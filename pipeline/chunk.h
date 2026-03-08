@@ -1,9 +1,15 @@
-#pragma once
+#ifndef CHUNK_H
+#define CHUNK_H
+
 #include <vector>
 #include <cstdint>
 
-struct Chunk
-{
-    int id;                     
-    std::vector<uint8_t> data; 
+struct Chunk {
+
+    int id;
+    std::vector<uint8_t> data;
+
+    Chunk(int chunk_id, std::vector<uint8_t>&& buffer);
 };
+
+#endif

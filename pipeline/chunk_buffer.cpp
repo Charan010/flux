@@ -1,50 +1,32 @@
-#include "huffman.h"
-#include "chunk.h"
-#include <fstream>
-#include "bit_io.h"
-#include <queue>
+#include "chunk_buffer.h"
 
-
-void write_chunk_to_file(const std::vector<uint8_t> &data, std::ofstream &output_file){
-
-    for(char c: data){
-        BitWriter::write_bit(c == 1);
-    }
-
-
-
-
+ChunkBuffer::ChunkBuffer(BitWriter &writer): 
+    bw(writer), expected_chunk_id(0){
 }
 
+void ChunkBuffer::submit_chunk(Chunk chunk){
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        buffer.push(std::move(chunk));
+    }
 
+    flush_ready_chunks();
+}
 
-void chunk_buffer(std::ofstream &output_file, int total_chunks){
-
-    std::priority_queue<Chunk*> buffer;
-
-    int expected_chunk_id = 0;
-
+void ChunkBuffer::flush_ready_chunks(){
+    std::lock_guard<std::mutex> lock(mtx);  
     while(!buffer.empty()){
 
-        Chunk* chunk = buffer.top();
+        Chunk chunk = buffer.top();
 
-        if(chunk -> id == expected_chunk_id){
+        if(chunk.id != expected_chunk_id)
+            break;
 
-        }
+        buffer.pop();
 
+        for(uint8_t b : chunk.data)
+            bw.write_bit(b);        
 
-
-
-
+        expected_chunk_id++;        
     }
-
-
-
-
-
-
-
-
 }
-
-
