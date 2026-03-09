@@ -23,8 +23,9 @@ private:
     std::priority_queue<Chunk, std::vector<Chunk>, ChunkCompare> buffer;
 
     std::mutex mtx;
+    std::mutex write_mtx; 
     int expected_chunk_id;
-
+    void flush_ready_chunks_locked();
 
 public:
 

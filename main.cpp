@@ -5,8 +5,13 @@
 
 namespace fs = std::filesystem;
 
-int main(int argc, char* argv[])
-{
+int main(int argc, char* argv[]){
+
+     size_t threads = std::thread::hardware_concurrency();
+        if(threads == 0)
+            threads = 4;
+
+
     if (argc < 3){
         std::cerr << "Usage:\n" << "  Compress:   ./huffman -c <input_file>\n" <<
          "  Decompress: ./huffman -d <input_file.huf> <output_file>\n";
@@ -16,10 +21,6 @@ int main(int argc, char* argv[])
     std::string mode = argv[1];
 
     try{
-
-        size_t threads = std::thread::hardware_concurrency();
-        if(threads == 0)
-            threads = 4;
 
         Coordinator coordinator(threads,  1 << 20);
 

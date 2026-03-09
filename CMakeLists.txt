@@ -28,5 +28,9 @@ target_include_directories(huffman PRIVATE
     ${CMAKE_SOURCE_DIR}/threadpool
 )
 
+target_compile_options(huffman PRIVATE -O3 -march=native)
+
+target_link_libraries(huffman PRIVATE pthread)
+
 install(TARGETS huffman
         RUNTIME DESTINATION bin)

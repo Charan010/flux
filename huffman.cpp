@@ -3,20 +3,19 @@
 #include <array>
 
 
-Node::Node(uint8_t c, uint64_t f) {
-    ch = c;
-    freq = f;
-    left = nullptr;
-    right = nullptr;
-}
+//binding pointers and values directly before constructer gives class variables some default value
 
-Node::Node(Node* l, Node* r) {
-    ch = '\0';
-    freq = l->freq + r->freq;
-    left = l;
-    right = r;
-}
+Node::Node(uint8_t c, uint64_t f)
+    : ch(c), freq(f), left(nullptr), right(nullptr) {}
 
+
+Node::Node(std::unique_ptr<Node> l, std::unique_ptr<Node> r)
+    : ch(0), freq(l->freq + r->freq), 
+      left(std::move(l)), right(std::move(r)) {}
+
+
+Node::Node()
+    : ch(0), freq(0), left(nullptr), right(nullptr) {}
 
 bool Compare::operator()(Node* a, Node* b) {
     return a->freq > b->freq;
@@ -38,82 +37,83 @@ bool Compare::operator()(Node* a, Node* b) {
     
 */
 
-Node *build_huffman_tree(const FrequencyTable &freq){
-
-
+Node* build_huffman_tree(const FrequencyTable& freq) {
     std::priority_queue<Node*, std::vector<Node*>, Compare> pq;
 
-    for(int i = 0; i < 256; i++) {
+    for(int i = 0; i < 256; i++)
         if(freq[i] > 0)
-        pq.push(new Node((char)i, freq[i]));
-}
+            pq.push(new Node((uint8_t)i, freq[i]));
 
-    while(pq.size() > 1){
-        Node *a = pq.top();
-        pq.pop();
-
-        Node *b = pq.top();
-        pq.pop();
-
-        pq.push(new Node(a, b));
+    while(pq.size() > 1) {
+        auto a = std::unique_ptr<Node>(pq.top()); pq.pop();
+        auto b = std::unique_ptr<Node>(pq.top()); pq.pop();
+        pq.push(new Node(std::move(a), std::move(b)));
     }
 
-    // return root tree after building 
     return pq.top();
 }
 
+void compute_lengths(Node* root, uint8_t depth, std::array<uint8_t, 256>& lengths) {
+    if(!root) return;
 
-void build_codes(Node* root_node, std::string code, std::array<std::string,256>& table){
-    if(!root_node)
-        return;
-
-    if(!root_node->left && !root_node->right){
-        table[(uint8_t)root_node->ch] = code.empty() ? "0" : code;
+    if(!root->left && !root->right) {
+        lengths[root->ch] = (depth == 0) ? 1 : depth;
         return;
     }
 
-    build_codes(root_node->left,  code + "0", table);
-    build_codes(root_node->right, code + "1", table);
+    compute_lengths(root->left.get(), depth + 1, lengths);
+    compute_lengths(root->right.get(), depth + 1, lengths);
 }
 
 
-void write_tree(Node *node, BitWriter &bw){
-    if(!node)
-        return;
+void generate_canonical_table(const std::array<uint8_t , 256>&lengths, std::array<HuffmanCode, 256>&table){
 
-    if(!node -> left && !node -> right){
-        bw.write_bit(1);
-        bw.write_byte(node -> ch);
-        return;
+    const int MAX_BITS = 32;
+
+    std::array<uint32_t, MAX_BITS +1> bl_count{};
+
+    for(uint8_t len : lengths){
+        if(len > 0)
+            bl_count[len]++;
     }
+
+    std::array<uint64_t, MAX_BITS+1> next_code{};
+
+    uint64_t code = 0;
+
+    for(int bits = 1; bits <= MAX_BITS; ++bits){
+
+        code = (code + bl_count[bits-1]) << 1;
+        next_code[bits] = code;
+    }
+
+    for(int sym = 0 ; sym < 256 ; ++sym){
+
+        uint8_t len = lengths[sym];
+
+        if(len != 0){
+            table[sym].bits = next_code[len];
+            table[sym].len = len;
+
+            next_code[len]++;
+
+        }
+       
+    }
+}
+
+
+void write_lengths(const std::array<uint8_t,256>& lengths, BitWriter& bw){
     
-    bw.write_bit(0);
-    write_tree(node -> left, bw);
-    write_tree(node -> right, bw);
-}
-
-Node* read_tree(BitReader &br){
-    int bit = br.read_bit();
-
-    if(bit == 1){
-
-        uint8_t ch = br.read_byte();
-        return new Node(ch, 0);
-        
-    }
-
-    Node* left = read_tree(br);
-    Node* right = read_tree(br);
-
-    return new Node(left, right);
+    for(int i = 0; i < 256; i++)
+        bw.write_byte(lengths[i]);
 }
 
 
-void free_tree(Node* node) {
-    if (!node) return;
-    free_tree(node->left);
-    free_tree(node->right);
-    delete node;
+void read_lengths(std::array<uint8_t,256>& lengths, BitReader& br){
+    
+    for(int i = 0; i < 256; i++)
+        lengths[i] = br.read_byte();
 }
 
 uint32_t read_uint32(BitReader& br) {
@@ -129,5 +129,34 @@ void write_uint32(BitWriter& bw, uint32_t x) {
     bw.write_byte((x >> 16) & 0xFF);
     bw.write_byte((x >> 8) & 0xFF);
     bw.write_byte(x & 0xFF);
+}
+
+Node* build_decode_tree(const std::array<HuffmanCode, 256>& table) {
+    Node* root = new Node();
+
+    for(int sym = 0; sym < 256; sym++) {
+        const auto& code = table[sym];
+        if(code.len == 0) continue;
+
+        Node* curr = root;
+
+        for(int i = code.len - 1; i >= 0; i--) {
+            int bit = (code.bits >> i) & 1;
+
+            if(bit == 0) {
+                if(!curr->left)
+                    curr->left = std::make_unique<Node>();
+                curr = curr->left.get();
+            } else {
+                if(!curr->right)
+                    curr->right = std::make_unique<Node>();
+                curr = curr->right.get();
+            }
+        }
+
+        curr->ch = sym;
+    }
+
+    return root;
 }
 

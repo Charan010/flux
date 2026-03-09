@@ -1,18 +1,13 @@
 #include "frequency_counter.h"
 
 /*
-    shifting from hashmap to array because if im expecting a multibyte characters. frequency is counted based
-    on individual bytes only
-
-    since bytes range is 0 to 255 its just far more simpler to use array of 256 size than hashmap which increases
-    some complexity.
-
-
+    This implementation just consumes byte wise . Since byte range is 0 to 255,
+    array of size 256 is much more optimal than using unordered_map because we know the range.
 */
 
 
-FrequencyCounter::FrequencyCounter(ThreadPool &p) : pool(p){
 
+FrequencyCounter::FrequencyCounter(ThreadPool &p) : pool(p){
     pending = 0;
     global_freq.fill(0);
 }
@@ -40,13 +35,15 @@ void FrequencyCounter::submit_chunk(const Chunk& chunk){
         done_cv.notify_one();  
     });
 }
+
+
 void FrequencyCounter::wait(){
 
     std::unique_lock<std::mutex> lock(done_mtx);
 
 
-    /*the main thread which called will keep on sleeping until number of chunks left reaches
-    0 and gets woken up by done_cv condition variable */
+    // The caller thread sleep until the chunks have merged their local frequency table with global state
+    // and then wakes up the caller thread with done_cv condition variable.
 
     done_cv.wait(lock, [this]{
         return pending == 0;
