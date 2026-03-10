@@ -160,3 +160,47 @@ Node* build_decode_tree(const std::array<HuffmanCode, 256>& table) {
     return root;
 }
 
+void build_decode_lut(const std::array<HuffmanCode, 256>& table, Node* root, DecodeLUT& lut) {
+
+    for(auto& e : lut) {
+        e.symbol = 0;
+        e.bits = 0;
+        e.next = nullptr;
+        e.is_leaf = false;
+    }
+
+    for(int sym = 0; sym < 256; ++sym) {
+
+        const auto& code = table[sym];
+        if(code.len == 0)
+            continue;
+
+        if(code.len <= LUT_BITS) {
+
+            uint32_t shift = LUT_BITS - code.len;
+            uint32_t start = code.bits << shift;
+            uint32_t end = start + (1u << shift);
+
+            for(uint32_t i = start; i < end; ++i) {
+                lut[i].symbol = sym;
+                lut[i].bits = code.len;
+                lut[i].is_leaf = true;
+            }
+
+        } else {
+
+            uint32_t prefix = code.bits >> (code.len - LUT_BITS);
+
+            if(!lut[prefix].next) {
+                Node* node = root;
+                for(int i = LUT_BITS - 1; i >= 0; i--) {
+                    int bit = (prefix >> i) & 1;
+                    node = bit ? node->right.get() : node->left.get();
+                }
+                lut[prefix].next = node;
+                lut[prefix].bits = LUT_BITS;
+                lut[prefix].is_leaf = false;
+            }
+        }
+    }
+}

@@ -51,40 +51,62 @@ BitReader::BitReader(const std::string& file)
     in.rdbuf()->pubsetbuf(io_buf, sizeof(io_buf));  
 }
 
-int BitReader::read_bit() {
-    if (bits == 0) {
+void BitReader::refill(int needed){
+
+    while(bits_in_buf < needed){
+
         int c = in.get();
-        
-        if (c == EOF)
-            return -1;
-        buffer = static_cast<uint8_t>(c);
-        bits = 8;
+        if(c == EOF)
+            break;
+
+        bitbuf = (bitbuf << 8) |(uint8_t)c;
+        bits_in_buf += 8;
     }
 
-    int bit = (buffer >> 7) & 1;
-    buffer <<= 1;
-    bits--;
+}
+
+uint32_t BitReader::peek_bit(int n){
+
+    refill(n);
+
+    if(bits_in_buf < n)
+        throw std::runtime_error("unexpected EOF");
+
+    return (bitbuf >> (bits_in_buf - n)) & ((1u << n) - 1);
+
+}
+
+void BitReader::consume_bits(int n){
+    bits_in_buf -= n;
+}
+
+int BitReader::read_bit(){
+    refill(1);
+
+
+    if(bits_in_buf == 0)
+        return -1;
+
+    int bit = (bitbuf >> (bits_in_buf - 1)) & 1;
+    bits_in_buf--;
+
     return bit;
 }
 
-uint8_t BitReader::read_byte() {
-    if (bits == 0)
-        return static_cast<uint8_t>(in.get());
 
-    uint8_t b = buffer >> (8 - bits);
-    int need = 8 - bits;             
+uint8_t BitReader::read_byte(){
+    refill(8);
 
-    int c = in.get();
-    if (c == EOF) throw std::runtime_error("unexpected EOF");
-    buffer = static_cast<uint8_t>(c);
+    if(bits_in_buf < 8)
+        throw std::runtime_error("unexpected EOF");
 
-    b = (b << need) | (buffer >> bits);
-    buffer <<= need;                   
+    uint8_t val = (bitbuf >> (bits_in_buf - 8)) & 0xFF;
+    bits_in_buf -= 8;
 
-    return b;
+    return val;
 }
 
-void BitReader::align_to_byte() {
-    bits = 0;
-    buffer = 0;
+
+void BitReader::align_to_byte(){
+    bits_in_buf -= bits_in_buf % 8;
 }

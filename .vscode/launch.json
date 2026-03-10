@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug joy.exe",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/huffman",
+            "args": ["-c", "random.bin"],
+            "cwd": "${workspaceFolder}",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "miDebuggerPath": "/usr/bin/gdb"
+        }
+    ]
+}

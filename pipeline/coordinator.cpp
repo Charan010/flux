@@ -21,7 +21,6 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
         std::vector<uint8_t> data(chunk_size);
         in.read((char*)data.data(), chunk_size);
 
-
         size_t read = in.gcount();
         if(read == 0)
             break;
@@ -35,9 +34,9 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
     auto freq = counter.get_result();
     int total_chunks = chunk_id;
 
-    Node* root = build_huffman_tree(freq);
+    auto root = std::unique_ptr<Node>(build_huffman_tree(freq));
     std::array<uint8_t,256> lengths{};
-    compute_lengths(root , 0 , lengths);
+    compute_lengths(root.get(), 0, lengths);
 
     std::array<HuffmanCode,256> table{};
     generate_canonical_table(lengths, table);
@@ -48,7 +47,6 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
     uint32_t total_len = 0;
     for(int i = 0; i < 256; i++)
         total_len += freq[i];
-
 
     write_uint32(bw, total_len);
     write_uint32(bw, total_chunks);
@@ -63,29 +61,34 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
 
     while(true){
 
-        std::vector<uint8_t> data(chunk_size);
-        in2.read((char*)data.data(), chunk_size);
+        // reuse thread_local buffer for reading to avoid per-chunk allocation
+        thread_local std::vector<uint8_t> read_buf;
+        read_buf.resize(chunk_size);
+
+        in2.read((char*)read_buf.data(), chunk_size);
         size_t read = in2.gcount();
 
         if(read == 0)
             break;
 
-        data.resize(read);
+        // copy into chunk_data for the lambda — thread_local can't be captured
+        std::vector<uint8_t> chunk_data(read_buf.begin(), read_buf.begin() + read);
 
         int id = chunk_id++;
 
-        pool.submit([data, id, &buffer, tbl]() mutable {
+        pool.submit([data = std::move(chunk_data), id, &buffer, tbl]() mutable {
 
             uint64_t acc = 0;
             int bits_in_acc = 0;
             uint32_t bit_count = 0;
 
-      
-            std::vector<uint8_t> encoded;
-            encoded.reserve(data.size() + 4);
-
             //reserving data.size() because worst case scenario. The maximum size required to encode data is
             // data.size() * 8 bytes and + 4 for adding how many bits are written in the encoded vector.
+
+            // fresh allocation per chunk — thread_local caused corruption on multi-chunk files
+            // page faults are from file I/O anyway, not vector allocation, so no perf loss here
+            std::vector<uint8_t> encoded;
+            encoded.reserve(data.size() + 4);
 
             encoded.push_back(0);
             encoded.push_back(0);
@@ -129,28 +132,24 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
             if(bits_in_acc > 0)
                 encoded.push_back(static_cast<uint8_t>(acc << (8 - bits_in_acc)));
 
-
-        // Writing 4 byte integer which represents valid huffman bits so that decoder can parse until valid bits 
-        // and skip padded bits.
+            // Writing 4 byte integer which represents valid huffman bits so that decoder can parse until valid bits 
+            // and skip padded bits.
 
             encoded[0] = (bit_count >> 24) & 0xFF;
             encoded[1] = (bit_count >> 16) & 0xFF;
             encoded[2] = (bit_count >>  8) & 0xFF;
             encoded[3] = (bit_count >>  0) & 0xFF;
 
+            // move directly into chunk — no copy needed since encoded is local
             buffer.submit_chunk(Chunk(id, std::move(encoded)));
         });
     }
 
     pool.shutdown();
 
-
     buffer.flush_ready_chunks();
     bw.flush();
- 
 }
-
-
 
 void Coordinator::decompress(const std::string &input_file, const std::string &dump_file){
 
@@ -163,6 +162,9 @@ void Coordinator::decompress(const std::string &input_file, const std::string &d
     generate_canonical_table(lengths, table);
 
     auto root = std::unique_ptr<Node>(build_decode_tree(table));
+    DecodeLUT lut;
+    build_decode_lut(table, root.get(), lut);
+
 
     uint32_t total_len = read_uint32(br);
     uint32_t total_chunks = read_uint32(br);
@@ -199,25 +201,60 @@ void Coordinator::decompress(const std::string &input_file, const std::string &d
 
          Node* curr = root.get();
         uint32_t bits_read = 0;
-        while(bits_read < bit_count && produced < total_len){
 
-            int bit = br.read_bit();
+        while(bits_read < bit_count && produced < total_len) {
 
-            if(bit == -1)
-                throw std::runtime_error("corrupt compressed file");
+        uint32_t bits_remaining = bit_count - bits_read;
 
-            bits_read++;
-
-            curr = (bit == 0) ? curr->left.get() : curr->right.get(); 
-
-            if(!curr->left && !curr->right){
-                out.put(static_cast<char>(curr->ch));
-                curr = root.get();
-                produced++;
+        // if fewer bits left than LUT_BITS, fall back to bit-by-bit tree walk
+        if(bits_remaining < LUT_BITS) {
+            Node* node = root.get();
+            while(node->left || node->right) {
+                if(bits_read >= bit_count)
+                    throw std::runtime_error("corrupt: ran out of bits mid-symbol");
+                int bit = br.read_bit();
+                if(bit == -1)
+                    throw std::runtime_error("unexpected EOF");
+                bits_read++;
+                node = bit ? node->right.get() : node->left.get();
             }
+            out.put(static_cast<char>(node->ch));
+            produced++;
+            continue;
         }
 
-        br.align_to_byte();
+        uint32_t peek = br.peek_bit(LUT_BITS);
+        auto& entry = lut[peek];
+
+        if(entry.is_leaf) {
+            br.consume_bits(entry.bits);
+            bits_read += entry.bits;
+            
+            out.put(static_cast<char>(entry.symbol));
+            produced++;
+        }
+        else {
+            br.consume_bits(LUT_BITS);
+            bits_read += LUT_BITS;
+
+            Node* node = entry.next;
+            while(node->left || node->right) {
+                int bit = br.read_bit();
+                if(bit == -1)
+                    throw std::runtime_error("corrupt compressed file");
+
+
+                bits_read++;
+                node = bit ? node->right.get() : node->left.get();
+            }
+            out.put(static_cast<char>(node->ch));
+            produced++;
+        }
+    }
+    
+    br.align_to_byte();
+
+
     }
 
     out.close();

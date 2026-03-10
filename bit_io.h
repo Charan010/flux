@@ -1,6 +1,3 @@
-#ifndef BIT_IO_H
-#define BIT_IO_H
-
 #pragma once
 #include <fstream>
 #include <cstdint>
@@ -27,13 +24,14 @@ struct BitReader {
     char io_buf[BUF_SIZE];
 
     std::ifstream in;
-    uint8_t buffer = 0;
-    int bits = 0;
+    uint64_t bitbuf = 0;
+    int bits_in_buf = 0;
 
     BitReader(const std::string& file);
+    void refill(int needed);
+    uint32_t peek_bit(int n);
+    void consume_bits(int n);
     int read_bit();
     uint8_t read_byte();
     void align_to_byte();
 };
-
-#endif

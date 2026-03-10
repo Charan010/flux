@@ -10,13 +10,6 @@
 #include "bit_io.h"
 
 
-struct HuffmanCode {
-    uint64_t bits = 0;
-    uint8_t len = 0;
-};
-
-using FrequencyTable = std::array<uint64_t,256>;
-
 struct Node {
     uint8_t ch;
     uint64_t freq;
@@ -26,6 +19,28 @@ struct Node {
     Node(uint8_t c, uint64_t f);
     Node();
 };
+
+
+struct HuffmanCode {
+    uint64_t bits = 0;
+    uint8_t len = 0;
+};
+
+struct DecodeEntry{
+    uint8_t symbol;
+    uint8_t bits;
+
+    Node* next;
+    bool is_leaf;
+};
+
+constexpr int LUT_BITS = 9;
+constexpr int LUT_SIZE = 1 << LUT_BITS;
+
+
+using FrequencyTable = std::array<uint64_t,256>;
+using DecodeLUT = std::array<DecodeEntry, LUT_SIZE>;
+
 
 struct Compare {
     bool operator()(Node* a, Node* b);
@@ -47,5 +62,7 @@ void compute_lengths(Node* root , uint8_t depth, std::array<uint8_t, 256>&length
 void generate_canonical_table(const std::array<uint8_t , 256>&lengths, std::array<HuffmanCode, 256>&table);
 
 Node* build_decode_tree(const std::array<HuffmanCode,256>& table);
+
+void build_decode_lut(const std::array<HuffmanCode,256>& table, Node* root, DecodeLUT& lut);
 
 #endif
