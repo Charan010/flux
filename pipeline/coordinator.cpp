@@ -62,7 +62,7 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
     while(true){
 
         // reuse thread_local buffer for reading to avoid per-chunk allocation
-        thread_local std::vector<uint8_t> read_buf;
+        std::vector<uint8_t> read_buf;
         read_buf.resize(chunk_size);
 
         in2.read((char*)read_buf.data(), chunk_size);

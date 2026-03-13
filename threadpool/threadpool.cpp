@@ -25,8 +25,8 @@ void ThreadPool::submit(std::function<void()> job){
     cv.notify_one();
 }
 
-void ThreadPool::shutdown()
-{
+void ThreadPool::shutdown(){
+
     {
         std::lock_guard<std::mutex> lock(mtx);
         stop = true;
@@ -34,18 +34,17 @@ void ThreadPool::shutdown()
 
     cv.notify_all();
 
-    for(auto &t : workers)
-    {
+    for(auto &t : workers){
+
         if(t.joinable())
             t.join();
     }
 }
 
 
-void ThreadPool::worker_loop()
-{
-    while(true)
-    {
+void ThreadPool::worker_loop(){
+    while(true){
+        
         std::function<void()> job;
 
         {

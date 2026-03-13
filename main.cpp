@@ -22,7 +22,7 @@ int main(int argc, char* argv[]){
 
     try{
 
-        Coordinator coordinator(threads,  4 << 20);
+        Coordinator coordinator(threads,  1 << 20);
 
         if (mode == "-c"){
 
