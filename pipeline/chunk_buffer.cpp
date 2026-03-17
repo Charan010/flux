@@ -39,7 +39,9 @@ void ChunkBuffer::submit_chunk(Chunk chunk) {
     }
 }
 
+
 void ChunkBuffer::flush_ready_chunks() {
+    std::lock_guard<std::mutex> wlock(write_mtx);
     std::lock_guard<std::mutex> lock(mtx);
     flush_ready_chunks_locked();
 }
@@ -50,7 +52,6 @@ void ChunkBuffer::flush_ready_chunks_locked() {
         if (buffer.top().id != expected_chunk_id)
             break;
         const Chunk& chunk = buffer.top();
-
 
         //writing the whole chunk to the disk.
         bw.out.write(reinterpret_cast<const char*>(chunk.data.data()), chunk.data.size());

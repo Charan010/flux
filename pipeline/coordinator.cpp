@@ -5,6 +5,7 @@
 #include <vector>
 #include <chrono>
 #include <iostream>
+#include <assert.h>
 
 Coordinator::Coordinator(size_t threads, size_t chunk):
     pool(threads), chunk_size(chunk) {}
@@ -97,7 +98,11 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
 
             for(uint8_t c : data){
 
+
+
                 const HuffmanCode& code = (*tbl)[c];
+
+                assert(bits_in_acc + code.len <= 64);
 
                 // making place for the new variable code in the accumulator.
                 acc = (acc << code.len) | code.bits;
@@ -110,22 +115,22 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
             // out bits.
 
                 while(bits_in_acc >= 8){
+
                     int bytes_ready = bits_in_acc / 8;
-                    int shift = bits_in_acc % 8;
-                    uint64_t to_write = acc >> shift;
+                    int remainder = bits_in_acc % 8;       
+                    uint64_t to_write = acc >> remainder;
 
                     size_t old_size = encoded.size();
                     encoded.resize(old_size + bytes_ready);
                     uint8_t* dst = encoded.data() + old_size;
 
                     for(int i = 0; i < bytes_ready; i++){
-                        int shift = (bytes_ready - 1 - i) * 8;
-                        dst[i] = (to_write >> shift) & 0xFF;
+                        int byte_shift = (bytes_ready - 1 - i) * 8;  
+                        dst[i] = (to_write >> byte_shift) & 0xFF;
                     }
 
-                //mask and apply AND to preserve only the remaining bits in the accumulator.
-                    bits_in_acc = shift;
-                    acc &= (1ULL << shift) - 1;
+                    bits_in_acc = remainder;
+                    acc &= (1ULL << remainder) - 1;
                 }
             }
 
@@ -197,6 +202,11 @@ void Coordinator::decompress(const std::string &input_file, const std::string &d
         bit_count |= (uint32_t)br.read_byte() << 16;
         bit_count |= (uint32_t)br.read_byte() << 8;
         bit_count |= (uint32_t)br.read_byte();
+
+        
+
+
+        //pool.submit([data = std::move(chunk_data), id, &buffer, tbl]() mutable {
 
 
          Node* curr = root.get();

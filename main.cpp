@@ -66,16 +66,3 @@ int main(int argc, char* argv[]){
     return 0;
 }
 
-/*
-
-◎ time huffman -c random.bin
-Compressed → /home/charan010/random.huf
-
-real	0m1.277s
-user	0m4.771s
-sys	0m1.478s
-
-                                                                                                                                        
-◎ 
-
-*/
