@@ -55,6 +55,9 @@ void BitReader::refill(int needed){
 
     while(bits_in_buf < needed){
 
+        if(bits_in_buf + 8 > 64)
+            break;
+
         int c = in.get();
         if(c == EOF)
             break;
