@@ -45,6 +45,11 @@ void BitWriter::flush() {
     out.flush();  
 }
 
+void BitWriter::write_bytes(const std::vector<uint8_t>& data) {
+    flush(); // ensure bit alignment
+    out.write(reinterpret_cast<const char*>(data.data()), data.size());
+}
+
 
 BitReader::BitReader(const std::string& file)
     : in(file, std::ios::binary) {

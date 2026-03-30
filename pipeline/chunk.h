@@ -1,5 +1,4 @@
-#ifndef CHUNK_H
-#define CHUNK_H
+#pragma ONCE
 
 #include <vector>
 #include <cstdint>
@@ -11,5 +10,3 @@ struct Chunk {
 
     Chunk(int chunk_id, std::vector<uint8_t>&& buffer);
 };
-
-#endif

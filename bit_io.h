@@ -2,6 +2,7 @@
 #include <fstream>
 #include <cstdint>
 #include <stdexcept>
+#include <vector>
 
 struct BitWriter {
     static constexpr size_t BUF_SIZE = 1 * 1024 * 1024; 
@@ -16,6 +17,7 @@ struct BitWriter {
     void write_bit(int b);
     void write_byte(uint8_t b);
     void flush();
+    void write_bytes(const std::vector<uint8_t>& data);
 };
 
 
