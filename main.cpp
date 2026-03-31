@@ -36,7 +36,7 @@ int main(int argc, char* argv[]){
             std::cout << "Compressed → " << output_path.string() << "\n";
         }
 
-        else if (mode == "-d"){
+        /*else if (mode == "-d"){
 
             if (argc < 4){
                 std::cerr << "Decode requires output file path\n";
@@ -49,7 +49,7 @@ int main(int argc, char* argv[]){
             coordinator.decompress(input_path.string(), output_path.string());
 
             std::cout << "Decompressed → " << output_path.string() << "\n";
-        }
+        } */
 
         else{
             std::cerr << "Unknown mode: " << mode << "\n";

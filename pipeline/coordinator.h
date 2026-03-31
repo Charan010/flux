@@ -22,5 +22,5 @@ public:
     Coordinator(size_t threads, size_t chunk);
 
     void compress(const std::string& input_file, const std::string& output_file);
-    void decompress(const std::string &input_file, const std::string &dump_file);
+    //void decompress(const std::string &input_file, const std::string &dump_file);
 };

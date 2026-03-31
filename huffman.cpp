@@ -3,7 +3,6 @@
 #include <array>
 
 
-//binding pointers and values directly before constructer gives class variables some default value
 
 Node::Node(uint8_t c, uint64_t f)
     : ch(c), freq(f), left(nullptr), right(nullptr) {}

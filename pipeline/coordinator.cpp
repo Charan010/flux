@@ -150,10 +150,10 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
 
     pool.shutdown();
 
-    buffer.flush_ready_chunks();
     bw.flush();
 }
 
+/*
 void Coordinator::decompress(const std::string &input_file, const std::string &dump_file){
 
     BitReader br(input_file);
@@ -308,7 +308,9 @@ void Coordinator::decompress(const std::string &input_file, const std::string &d
     }
 
     pool.shutdown();
-
-    chunk_buf.flush_ready_chunks();
     out.close();
 }
+*/
+
+
+

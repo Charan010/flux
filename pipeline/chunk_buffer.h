@@ -24,6 +24,8 @@ class ChunkBuffer{
 
     public:
 
+        ChunkBuffer(BitWriter &bw);
+
         void submit_chunk(Chunk chunk);
         void writer_loop();
         void finish();
