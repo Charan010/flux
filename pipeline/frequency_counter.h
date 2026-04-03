@@ -1,28 +1,19 @@
 #pragma once
 
-#include "threadpool.h"
-#include "chunk.h"
 #include <array>
-#include <atomic>
-#include <mutex>
+#include <string>
+#include <cstdint>
 
-using FrequencyTable = std::array<uint64_t,256>;
+using FrequencyTable = std::array<uint64_t, 256>;
 
 class FrequencyCounter {
-
 public:
 
-
-    FrequencyCounter(ThreadPool& pool);
-    void submit_chunk(const Chunk& chunk);
-    void wait();
-    FrequencyTable get_result();
+   
+    static FrequencyTable compute_frequency(const std::string& input_file,size_t chunk_size = 1 << 20);
 
 private:
-    ThreadPool& pool;
-    FrequencyTable global_freq;
-    std::mutex freq_mtx;
-    std::atomic<int> pending;
-    std::condition_variable done_cv;
-    std::mutex done_mtx;
+
+    static void count_range_chunked(const std::string& file, size_t start, size_t size, FrequencyTable& freq,
+        size_t chunk_size);
 };

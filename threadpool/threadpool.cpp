@@ -1,66 +1,61 @@
 #include "threadpool.h"
+#include "pipeline/coordinator.h"
 
-ThreadPool::ThreadPool(size_t num_threads) : stop(false){
-    
-    for(size_t i=0;i<num_threads;i++)
-        workers.emplace_back(&ThreadPool::worker_loop,this);
+Threadpool::Threadpool(size_t num_threads) {
 
-    
+    workers.reserve(num_threads);
+
+    for (size_t i = 0; i < num_threads; ++i)
+        workers.emplace_back(&Threadpool::worker_loop, this);
 }
 
-ThreadPool::~ThreadPool(){
+Threadpool::~Threadpool() {
     shutdown();
 }
 
-void ThreadPool::submit(std::function<void()> job){   
-    
-    // kind of exploiting RAAI in C++ . Lock gets automatically released the moment,
-    // it goes out of scope.
-    
+void Threadpool::submit(EncodeTask task) {
+
     {
         std::lock_guard<std::mutex> lock(mtx);
-        jobs.push(std::move(job));
+        jobs.push(std::move(task));
     }
 
     cv.notify_one();
 }
 
-void ThreadPool::shutdown(){
+void Threadpool::shutdown() {
 
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        stop = true;
-    }
+    bool expected = false;
+    if (!stop.compare_exchange_strong(expected, true))
+        return;
 
     cv.notify_all();
 
-    for(auto &t : workers){
-
-        if(t.joinable())
+    for (auto &t : workers) {
+        if (t.joinable())
             t.join();
     }
 }
 
+void Threadpool::worker_loop() {
 
-void ThreadPool::worker_loop(){
-    while(true){
-        
-        std::function<void()> job;
+    while (true) {
 
-        {
             std::unique_lock<std::mutex> lock(mtx);
 
-            cv.wait(lock,[this]{
-                return stop || !jobs.empty();
+            cv.wait(lock, [this] {
+                return stop.load() || !jobs.empty();
             });
 
-            if(stop && jobs.empty())
+            if (stop.load() && jobs.empty())
                 return;
 
-            job = std::move(jobs.front());
+            EncodeTask task = std::move(jobs.front());
             jobs.pop();
-        }
 
-        job();
+            lock.unlock();
+
+        task.coord->encode_chunk(std::move(task.data), task.id, task.table, task.buffer);
+        
     }
 }

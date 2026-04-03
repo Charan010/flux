@@ -1,14 +1,12 @@
 #include "chunk_buffer.h"
 
-
-ChunkBuffer::ChunkBuffer(BitWriter &bw): bw(bw) {}
-
+ChunkBuffer::ChunkBuffer(BitWriter &bw) : bw(bw) {}
 
 /*
     writer_loop()
-    
+
     @brief It is a single thread loop which gets woken up everytime threadpool submits a task.
-    and checks if it is the expected_chunk or not. If yes, it gets written to the file using BitWriter class which 
+    and checks if it is the expected_chunk or not. If yes, it gets written to the file using BitWriter class which
     abstracts std::ofstream.
 
     @contract
@@ -20,12 +18,11 @@ ChunkBuffer::ChunkBuffer(BitWriter &bw): bw(bw) {}
     submit_task()
     @param Chunk chunk
 
-    @brief picks up the lock to put the chunk.id and Chunk into unordered_map and notifies the writer thread to wake up and process the 
+    @brief picks up the lock to put the chunk.id and Chunk into unordered_map and notifies the writer thread to wake up and process the
     chunk and writes it to the file if its the expected chunk.
 
 
 */
-
 
 void ChunkBuffer::submit_chunk(Chunk chunk){
 
@@ -33,27 +30,25 @@ void ChunkBuffer::submit_chunk(Chunk chunk){
 
     buffer.emplace(chunk.id, std::move(chunk));
     cv.notify_one();
-    
 }
-
 
 void ChunkBuffer::writer_loop(){
 
     std::unique_lock<std::mutex> lock(mtx);
 
-    while(true){
+    while (true){
 
-         cv.wait(lock, [&]() {
+        cv.wait(lock, [&](){
             return done || buffer.count(expected_chunk_id);
         });
 
-        if(done && buffer.count(expected_chunk_id) == 0)
+        if (done && buffer.count(expected_chunk_id) == 0)
             break;
 
-        while(buffer.count(expected_chunk_id)){
+        while (buffer.count(expected_chunk_id)){
 
-            auto it  = buffer.find(expected_chunk_id);
-            Chunk chunk = std::move(it -> second);
+            auto it = buffer.find(expected_chunk_id);
+            Chunk chunk = std::move(it->second);
 
             buffer.erase(expected_chunk_id);
 
@@ -65,14 +60,4 @@ void ChunkBuffer::writer_loop(){
             lock.lock();
         }
     }
-
 }
-
-
-
-
-
-
-
-
-

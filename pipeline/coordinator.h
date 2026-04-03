@@ -14,7 +14,7 @@ class Coordinator {
 
 private:
 
-    ThreadPool pool;
+    Threadpool pool;
     size_t chunk_size;
 
 public:
@@ -22,5 +22,8 @@ public:
     Coordinator(size_t threads, size_t chunk);
 
     void compress(const std::string& input_file, const std::string& output_file);
+    void encode_chunk(std::vector<uint8_t> data, int id, const std::array<HuffmanCode,256>* tbl, ChunkBuffer* buffer);
+
+
     //void decompress(const std::string &input_file, const std::string &dump_file);
 };
