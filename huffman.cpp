@@ -3,7 +3,6 @@
 #include <array>
 
 
-
 Node::Node(uint8_t c, uint64_t f)
     : ch(c), freq(f), left(nullptr), right(nullptr) {}
 

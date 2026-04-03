@@ -1,5 +1,4 @@
 #include "threadpool.h"
-#include "pipeline/coordinator.h"
 
 Threadpool::Threadpool(size_t num_threads) {
 
@@ -13,11 +12,11 @@ Threadpool::~Threadpool() {
     shutdown();
 }
 
-void Threadpool::submit(EncodeTask task) {
+void Threadpool::submit(std::function<void()> job) {
 
     {
         std::lock_guard<std::mutex> lock(mtx);
-        jobs.push(std::move(task));
+        jobs.push(std::move(job));
     }
 
     cv.notify_one();
@@ -41,21 +40,20 @@ void Threadpool::worker_loop() {
 
     while (true) {
 
-            std::unique_lock<std::mutex> lock(mtx);
+        std::unique_lock<std::mutex> lock(mtx);
 
-            cv.wait(lock, [this] {
-                return stop.load() || !jobs.empty();
-            });
+        cv.wait(lock, [this] {
+            return stop.load() || !jobs.empty();
+        });
 
-            if (stop.load() && jobs.empty())
-                return;
+        if (stop.load() && jobs.empty())
+            return;
 
-            EncodeTask task = std::move(jobs.front());
-            jobs.pop();
+        auto job = std::move(jobs.front());
+        jobs.pop();
 
-            lock.unlock();
+        lock.unlock();
 
-        task.coord->encode_chunk(std::move(task.data), task.id, task.table, task.buffer);
-        
+        job(); 
     }
 }

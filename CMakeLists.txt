@@ -17,7 +17,6 @@ add_executable(
     pipeline/coordinator.cpp
     pipeline/chunk_buffer.cpp
     pipeline/chunk.cpp
-    pipeline/frequency_counter.cpp
 
     threadpool/threadpool.cpp
 )

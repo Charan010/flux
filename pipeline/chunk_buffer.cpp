@@ -1,6 +1,8 @@
 #include "chunk_buffer.h"
 
-ChunkBuffer::ChunkBuffer(BitWriter &bw) : bw(bw) {}
+ChunkBuffer::ChunkBuffer(BitWriter &bw) : bw(bw) {
+    writer_thread = std::thread(&ChunkBuffer::writer_loop, this);
+}
 
 /*
     writer_loop()
@@ -24,11 +26,22 @@ ChunkBuffer::ChunkBuffer(BitWriter &bw) : bw(bw) {}
 
 */
 
+
+
+/*
+    The main bottleneck is still that threads are fighting for one mutex and could implement
+    lock free CAS solution to reduce mutex and condition variable overhead.
+
+    and also can simply resize the vector to total number of chunks and use that to store becaue of
+    it being O(1) access and simple pointer arithmetic.
+
+*/
 void ChunkBuffer::submit_chunk(Chunk chunk){
-
-    std::unique_lock<std::mutex> lock(mtx);
-
-    buffer.emplace(chunk.id, std::move(chunk));
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        buffer.emplace(chunk.id, std::move(chunk));
+    }
+    
     cv.notify_one();
 }
 
@@ -60,4 +73,16 @@ void ChunkBuffer::writer_loop(){
             lock.lock();
         }
     }
+}
+
+void ChunkBuffer::finish() {
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        done = true;
+    }
+
+    cv.notify_all();
+
+    if (writer_thread.joinable())
+        writer_thread.join();
 }

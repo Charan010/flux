@@ -7,6 +7,7 @@
 #include <cstdint>
 #include "bit_io.h"
 #include "chunk.h"
+#include <thread>
 
 
 class ChunkBuffer{
@@ -20,6 +21,7 @@ class ChunkBuffer{
 
         int expected_chunk_id = 0;
         bool done = false;
+        std::thread writer_thread; 
 
 
     public:
