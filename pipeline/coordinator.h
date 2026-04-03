@@ -4,10 +4,12 @@
 #include <array>
 
 #include "threadpool.h"
-#include "frequency_counter.h"
 #include "chunk_buffer.h"
 #include "huffman.h"
 #include "bit_io.h"
+
+
+using FrequencyTable = std::array<uint64_t, 256>;
 
 
 class Coordinator {

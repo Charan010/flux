@@ -51,28 +51,44 @@ void Coordinator::encode_chunk(std::vector<uint8_t> data, int id, const std::arr
     encoded[3] = (bit_count >>  0) & 0xFF;
 
     buffer->submit_chunk(Chunk(id, std::move(encoded)));
+
 }
 
 void Coordinator::compress(const std::string &input_file, const std::string &output_file) {
+    
+    FrequencyTable freq{};
+    freq.fill(0);
+    
+    int total_chunks = 0;
+    std::ifstream in(input_file, std::ios::binary);
+    std::vector<uint8_t> read_buf(chunk_size);
 
-    auto freq = FrequencyCounter::compute_frequency(input_file, chunk_size);
+    while (true) {
 
-    std::ifstream size_in(input_file, std::ios::binary | std::ios::ate);
-    size_t file_size = size_in.tellg();
-    size_in.close();
+        in.read(reinterpret_cast<char*>(read_buf.data()), chunk_size);
+        size_t read = in.gcount();
 
-    int total_chunks = (file_size + chunk_size - 1) / chunk_size;
+        if (read == 0)
+            break;
+
+        for (size_t i = 0; i < read; ++i) {
+            freq[read_buf[i]]++;
+        }
+
+        total_chunks++;
+    }
+
+    in.close();
 
     auto root = std::unique_ptr<Node>(build_huffman_tree(freq));
 
-    std::array<uint8_t,256> lengths{};
+    std::array<uint8_t, 256> lengths{};
     compute_lengths(root.get(), 0, lengths);
 
-    std::array<HuffmanCode,256> table{};
+    std::array<HuffmanCode, 256> table{};
     generate_canonical_table(lengths, table);
 
     BitWriter bw(output_file);
-
     write_lengths(lengths, bw);
 
     uint32_t total_len = 0;
@@ -81,30 +97,26 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
 
     write_uint32(bw, total_len);
     write_uint32(bw, total_chunks);
-
-    bw.flush(); 
+    bw.flush();
 
     ChunkBuffer buffer(bw);
-
-    std::ifstream in(input_file, std::ios::binary);
-    int chunk_id = 0;
-
     const auto* tbl = &table;
 
+    std::ifstream in2(input_file, std::ios::binary);
+    int chunk_id = 0;
+
     while (true) {
-
-        std::vector<uint8_t> read_buf(chunk_size);
-
-        in.read(reinterpret_cast<char*>(read_buf.data()), chunk_size);
-        size_t read = in.gcount();
+        in2.read(reinterpret_cast<char*>(read_buf.data()), chunk_size);
+        size_t read = in2.gcount();
 
         if (read == 0)
             break;
 
-        read_buf.resize(read);
+        std::vector<uint8_t> chunk_data(read_buf.begin(), read_buf.begin() + read);
 
-        pool.submit(EncodeTask{std::move(read_buf), chunk_id++, this, tbl, &buffer});
+        pool.submit(EncodeTask{std::move(chunk_data), chunk_id++, this, tbl, &buffer });
     }
 
+    in2.close();
     bw.flush();
 }
