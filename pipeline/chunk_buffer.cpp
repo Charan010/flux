@@ -1,6 +1,9 @@
 #include "chunk_buffer.h"
 
-ChunkBuffer::ChunkBuffer(BitWriter &bw) : bw(bw) {
+ChunkBuffer::ChunkBuffer(BitWriter &bw, uint32_t total_chunks)
+    : bw(bw){
+        
+    buffer.resize(total_chunks);
     writer_thread = std::thread(&ChunkBuffer::writer_loop, this);
 }
 
@@ -17,70 +20,62 @@ ChunkBuffer::ChunkBuffer(BitWriter &bw) : bw(bw) {
         is encoded.
 
 
-    submit_task()
+    submit_chunk()
     @param Chunk chunk
 
-    @brief picks up the lock to put the chunk.id and Chunk into unordered_map and notifies the writer thread to wake up and process the
-    chunk and writes it to the file if its the expected chunk.
-
-
+    @brief picks up the lock to put the chunk into the pre-sized vector slot at index chunk.id
+    and notifies the writer thread to wake up and process the chunk and writes it to the file
+    if its the expected chunk.
 */
 
 
-
-/*
-    The main bottleneck is still that threads are fighting for one mutex and could implement
-    lock free CAS solution to reduce mutex and condition variable overhead.
-
-    and also can simply resize the vector to total number of chunks and use that to store becaue of
-    it being O(1) access and simple pointer arithmetic.
-
-*/
 void ChunkBuffer::submit_chunk(Chunk chunk){
     {
-        std::unique_lock<std::mutex> lock(mtx);
-        buffer.emplace(chunk.id, std::move(chunk));
+        std::lock_guard<std::mutex> lock(mtx);
+        buffer[chunk.id] = std::move(chunk);
     }
-    
+
     cv.notify_one();
 }
 
 void ChunkBuffer::writer_loop(){
 
+
     std::unique_lock<std::mutex> lock(mtx);
 
-    while (true){
+    while (true) {
 
-        cv.wait(lock, [&](){
-            return done || buffer.count(expected_chunk_id);
+        cv.wait(lock, [this]() {
+            return done.load(std::memory_order::relaxed)
+                || (expected_chunk_id < buffer.size()
+                    && buffer[expected_chunk_id].has_value());
         });
 
-        if (done && buffer.count(expected_chunk_id) == 0)
+        if (done.load(std::memory_order::relaxed)
+                && (expected_chunk_id >= buffer.size()
+                    || !buffer[expected_chunk_id].has_value()))
             break;
 
-        while (buffer.count(expected_chunk_id)){
-
-            auto it = buffer.find(expected_chunk_id);
-            Chunk chunk = std::move(it->second);
-
-            buffer.erase(expected_chunk_id);
+        while (expected_chunk_id < buffer.size()
+               && buffer[expected_chunk_id].has_value())
+        {
+            // Move out of the optional slot, then clear it to release memory.
+            Chunk chunk = std::move(*buffer[expected_chunk_id]);
+            buffer[expected_chunk_id].reset();
 
             expected_chunk_id++;
 
             lock.unlock();
             bw.write_bytes(chunk.data);
-
             lock.lock();
         }
     }
 }
 
-void ChunkBuffer::finish() {
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        done = true;
-    }
 
+void ChunkBuffer::finish(){
+    
+    done.store(true, std::memory_order::release);
     cv.notify_all();
 
     if (writer_thread.joinable())

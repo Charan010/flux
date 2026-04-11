@@ -33,7 +33,7 @@ void Coordinator::encode_chunk(std::vector<uint8_t> data, int id, const std::arr
     if (bits_in_acc > 0)
         encoded.push_back(static_cast<uint8_t>(acc << (8 - bits_in_acc)));
 
-    /* writing a 4 byte total number of valid bits in the file. */
+    /* writing a 4 byte total number of valid bits in the chunk. */
     encoded[0] = (bit_count >> 24) & 0xFF;
     encoded[1] = (bit_count >> 16) & 0xFF;
     encoded[2] = (bit_count >>  8) & 0xFF;
@@ -139,6 +139,7 @@ void Coordinator::decode_chunk(std::vector<uint8_t> encoded, uint32_t bit_count,
             idx = (acc >> shift) & ((1 << LUT_BITS) - 1);
             
         } else {
+            
             // fewer bits than LUT_BITS remain — left-align into LUT_BITS window
             int shift = LUT_BITS - bits_in_acc;
             idx = (acc << shift) & ((1 << LUT_BITS) - 1);

@@ -10,8 +10,7 @@ Node::Node(uint8_t c, uint64_t f)
 Node::Node(std::unique_ptr<Node> l, std::unique_ptr<Node> r)
     : ch(0), freq(l->freq + r->freq), 
       left(std::move(l)), right(std::move(r)) {}
-
-
+    
 Node::Node()
     : ch(0), freq(0), left(nullptr), right(nullptr) {}
 
@@ -20,21 +19,10 @@ bool Compare::operator()(Node* a, Node* b) {
 }
 
 
-/* using a priority queue to take minimum frequent character first and build tree. So, that characters
-   with more frequency get shorter code instead of fixed code for all characters.
-
-    For example:
-        If my entire text/string uses only A,B,C,D,E
-        then i need atleast 3 bits to encode characters.
-
-        so total bits sent = 3 * length of the text/string.
-
-    But according to information theory, I(x) is inversely proportional to P(x)
-    So, more likely some event is to occur then less information we will gain.
-   
-    
+/*
+    building huffman tree by using priority queue where most frequent characters are 
+    assigned shorter codes.
 */
-
 Node* build_huffman_tree(const FrequencyTable& freq) {
     std::priority_queue<Node*, std::vector<Node*>, Compare> pq;
 
@@ -51,6 +39,8 @@ Node* build_huffman_tree(const FrequencyTable& freq) {
     return pq.top();
 }
 
+
+
 void compute_lengths(Node* root, uint8_t depth, std::array<uint8_t, 256>& lengths) {
     if(!root) return;
 
@@ -63,6 +53,13 @@ void compute_lengths(Node* root, uint8_t depth, std::array<uint8_t, 256>& length
     compute_lengths(root->right.get(), depth + 1, lengths);
 }
 
+
+/*
+    while building huffman tree, suppose two characters have same frequency x. Depending upon the 
+    priority queue comparater, the tree structure can change as well.
+
+    to make this whole process deterministic, i'm using canonical table.
+*/
 
 void generate_canonical_table(const std::array<uint8_t , 256>&lengths, std::array<HuffmanCode, 256>&table){
 
@@ -157,6 +154,22 @@ Node* build_decode_tree(const std::array<HuffmanCode, 256>& table) {
 
     return root;
 }
+
+/*
+    reading bit by bit and going left or right based on the value is slow and also slows down
+    cache prediction. To make this process more faster, we can use look up tables (LUT)
+
+    @example
+    suppose A code = 1100
+    in this implementation, LUT table size = 9,
+    so all values starting from 1100xxxxx will point to A only.
+
+    this way, we can simply read multiple bits from the stream and decode faster. if not possible, we fall
+    back to decoding bit by bit.
+
+
+    This reduces the bottleneck of reading bit by bit.
+*/
 
 void build_decode_lut(const std::array<HuffmanCode, 256>& table, Node* root, DecodeLUT& lut) {
 
