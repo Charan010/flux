@@ -34,7 +34,7 @@ struct DecodeEntry{
     bool is_leaf;
 };
 
-constexpr int LUT_BITS = 9;
+constexpr int LUT_BITS = 12;
 constexpr int LUT_SIZE = 1 << LUT_BITS;
 
 

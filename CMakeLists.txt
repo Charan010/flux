@@ -12,7 +12,6 @@ add_executable(
     main.cpp
     huffman.cpp
     bit_io.cpp
-    helper.cpp
 
     pipeline/coordinator.cpp
     pipeline/chunk_buffer.cpp

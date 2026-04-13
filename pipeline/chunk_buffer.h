@@ -1,33 +1,54 @@
 #pragma once
 
 #include <vector>
-#include <optional>
 #include <atomic>
 #include <mutex>
 #include <condition_variable>
-#include <cstdint>
 #include <thread>
+#include <memory>
+#include <cstdint>
+#include <cassert>
 #include "bit_io.h"
 #include "chunk.h"
 
 class ChunkBuffer {
+public:
+    ChunkBuffer(BitWriter& bw, uint32_t total_chunks);
+    ~ChunkBuffer();
 
-    private:
-        BitWriter& bw;
-        std::vector<std::optional<Chunk>> buffer;   
+    void submit_chunk(Chunk chunk);
+    void finish();
 
-        std::mutex mtx;
-        std::condition_variable cv;
+private:
+    enum class SlotState : uint32_t {
+        Empty    = 0,
+        Filled   = 1,
+        Consumed = 2,
+    };
 
-        uint32_t expected_chunk_id = 0;
-        std::atomic<bool> done{false};              
+    struct alignas(64) Slot {
+        std::atomic<SlotState> state{SlotState::Empty};
+        std::vector<uint8_t>   data;
 
-        std::thread writer_thread;
+        Slot() = default;
+        Slot(const Slot&) = delete;
+        Slot& operator=(const Slot&) = delete;
+        Slot(Slot&&) = delete;
+        Slot& operator=(Slot&&) = delete;
+    };
 
-    public:
-        ChunkBuffer(BitWriter& bw, uint32_t total_chunks); 
+    BitWriter&               bw;
+    uint32_t                 total_chunks;
 
-        void submit_chunk(Chunk chunk);
-        void writer_loop();
-        void finish();
+    std::unique_ptr<Slot[]>  slots;
+
+    std::mutex               sleep_mtx;
+    std::condition_variable  sleep_cv;
+    std::atomic<bool>        done{false};
+
+    std::thread              writer_thread;
+
+    void writer_loop();
+
+    static constexpr int SPIN_COUNT = 1024;
 };

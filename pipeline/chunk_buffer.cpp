@@ -1,10 +1,13 @@
 #include "chunk_buffer.h"
 
-ChunkBuffer::ChunkBuffer(BitWriter &bw, uint32_t total_chunks)
-    : bw(bw){
-        
-    buffer.resize(total_chunks);
+ChunkBuffer::ChunkBuffer(BitWriter& bw, uint32_t total_chunks)
+    : bw(bw), total_chunks(total_chunks) , slots(new Slot[total_chunks]){
+
     writer_thread = std::thread(&ChunkBuffer::writer_loop, this);
+}
+
+ChunkBuffer::~ChunkBuffer(){
+    finish();
 }
 
 /*
@@ -30,53 +33,79 @@ ChunkBuffer::ChunkBuffer(BitWriter &bw, uint32_t total_chunks)
 
 
 void ChunkBuffer::submit_chunk(Chunk chunk){
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        buffer[chunk.id] = std::move(chunk);
-    }
 
-    cv.notify_one();
+    assert(chunk.id < (int)total_chunks);
+
+    Slot &slot = slots[chunk.id];
+
+
+    /* std::memory_order_release offers happens before gurantee and data and state would not be
+        available to other cores until these instructions are executed. Cpu is free to do out of order
+        optimization but it gives us the gurantee that this state will be flipped first.
+    */
+
+    slot.data = std::move(chunk.data);
+    slot.state.store(SlotState::Filled, std::memory_order_release);
+    sleep_cv.notify_one();
+
 }
+
 
 void ChunkBuffer::writer_loop(){
 
+    uint32_t next = 0;
 
-    std::unique_lock<std::mutex> lock(mtx);
+    while(next  < total_chunks){
+        Slot &slot = slots[next];
 
-    while (true) {
+        int spin = SPIN_COUNT;
 
-        cv.wait(lock, [this]() {
-            return done.load(std::memory_order::relaxed)
-                || (expected_chunk_id < buffer.size()
-                    && buffer[expected_chunk_id].has_value());
-        });
+        /* instead of multiple threads hammering on one lock, we can just afford to do spin lock waiting because of short
+            time required for the chunks to be submitted, so, the maximum number of spins that we can afford is SPIN_COUNT = 1024
+        */
+        while(slot.state.load(std::memory_order_acquire) != SlotState::Filled && spin-- > 0){
 
-        if (done.load(std::memory_order::relaxed)
-                && (expected_chunk_id >= buffer.size()
-                    || !buffer[expected_chunk_id].has_value()))
+
+            /*
+                hints CPU that these instructions are busy waiting and coooperates with other threads and allows other threads
+                for execution because its just burning CPU cycles without much progress. 
+            
+                also reduces pipeline power need.
+            */
+           
+            #if defined(__x86_64__) || defined(_M_X64)
+                __asm__ volatile("pause" ::: "memory");  
+            #elif defined(__aarch64__)
+                __asm__ volatile("yield" ::: "memory");
+            
+            #endif
+        }
+
+        if(slot.state.load(std::memory_order_acquire) != SlotState::Filled){
+
+            std::unique_lock<std::mutex> lock(sleep_mtx);
+
+            sleep_cv.wait(lock, [&] {
+                return slot.state.load(std::memory_order_acquire) == SlotState::Filled || done.load(std::memory_order_relaxed);
+            });
+
+        }
+
+        if(slot.state.load(std::memory_order_acquire) != SlotState::Filled)
             break;
 
-        while (expected_chunk_id < buffer.size()
-               && buffer[expected_chunk_id].has_value())
-        {
-            // Move out of the optional slot, then clear it to release memory.
-            Chunk chunk = std::move(*buffer[expected_chunk_id]);
-            buffer[expected_chunk_id].reset();
+        bw.write_bytes(slot.data);
 
-            expected_chunk_id++;
+        {std::vector<uint8_t> tmp; std::swap(slot.data, tmp); }
 
-            lock.unlock();
-            bw.write_bytes(chunk.data);
-            lock.lock();
+        slot.state.store(SlotState::Consumed, std::memory_order_release);
+        ++next;
         }
-    }
 }
 
-
-void ChunkBuffer::finish(){
-    
-    done.store(true, std::memory_order::release);
-    cv.notify_all();
+void ChunkBuffer::finish() {
+    done.store(true, std::memory_order_release);
+    sleep_cv.notify_all();
 
     if (writer_thread.joinable())
         writer_thread.join();

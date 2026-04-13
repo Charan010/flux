@@ -85,7 +85,7 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
     write_uint32(bw, total_chunks);
     bw.flush();
 
-    ChunkBuffer buffer(bw);
+    ChunkBuffer buffer(bw, total_chunks);
     const auto* tbl = &table;
 
     std::ifstream in2(input_file, std::ios::binary);
@@ -208,7 +208,7 @@ void Coordinator::decompress(const std::string& input, const std::string& output
     build_decode_lut(table, root, lut);
 
     BitWriter bw(output);
-    ChunkBuffer buffer(bw);
+    ChunkBuffer buffer(bw, total_chunks);
 
     for (uint32_t id = 0; id < total_chunks; id++) {
 

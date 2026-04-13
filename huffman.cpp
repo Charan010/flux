@@ -16,6 +16,7 @@ Node::Node()
 
 bool Compare::operator()(Node* a, Node* b) {
     return a->freq > b->freq;
+    
 }
 
 
