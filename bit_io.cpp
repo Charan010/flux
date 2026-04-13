@@ -122,3 +122,16 @@
     void BitReader::align_to_byte(){
         bits_in_buf -= bits_in_buf % 8;
     }
+
+    void BitReader::read_bytes(uint8_t* dst, size_t n){
+
+        align_to_byte();
+        in.read(reinterpret_cast<char*>(dst), n);
+
+        if (in.gcount() != static_cast<std::streamsize>(n))
+            throw std::runtime_error("unexpected EOF in read_bytes");
+    
+    }
+
+
+

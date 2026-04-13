@@ -1,34 +1,30 @@
-cmake_minimum_required(VERSION 3.16)
-
-project(huffman LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-add_executable(
-    huffman
-
+add_executable(flux
     main.cpp
     huffman.cpp
     bit_io.cpp
-
     pipeline/coordinator.cpp
     pipeline/chunk_buffer.cpp
     pipeline/chunk.cpp
-
     threadpool/threadpool.cpp
 )
 
-target_include_directories(huffman PRIVATE
+target_include_directories(flux PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/pipeline
     ${CMAKE_SOURCE_DIR}/threadpool
 )
 
-target_compile_options(huffman PRIVATE -O3 -march=native)
+target_compile_options(flux PRIVATE
+    -O3
+    -march=native
+    -funroll-loops
+    -fomit-frame-pointer
+    -falign-functions=64
+    -falign-loops=64
+)
 
-target_link_libraries(huffman PRIVATE pthread)
+set_property(TARGET flux PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
-install(TARGETS huffman
-        RUNTIME DESTINATION bin)
+target_link_libraries(flux PRIVATE pthread)
+
+install(TARGETS flux RUNTIME DESTINATION bin)

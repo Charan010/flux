@@ -216,10 +216,9 @@ void Coordinator::decompress(const std::string& input, const std::string& output
         uint32_t byte_size = (bit_count + 7) / 8;
 
         std::vector<uint8_t> encoded(byte_size);
-        for (uint32_t i = 0; i < byte_size; i++)
-            encoded[i] = br.read_byte();
+        br.read_bytes(encoded.data(), byte_size);
 
-        pool.submit([this,encoded = std::move(encoded), bit_count, &buffer, &lut, root, id]() mutable {
+        pool.submit([this, encoded = std::move(encoded), bit_count, &buffer, &lut, root, id]() mutable {
             decode_chunk(std::move(encoded), bit_count, lut, root, &buffer, id);
         });
     }

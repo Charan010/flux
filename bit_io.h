@@ -36,4 +36,6 @@ struct BitReader {
     int read_bit();
     uint8_t read_byte();
     void align_to_byte();
+    void read_bytes(uint8_t* dst, size_t n);
+
 };
