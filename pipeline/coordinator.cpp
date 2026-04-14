@@ -59,8 +59,22 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
         if (read == 0)
             break;
 
-        for (size_t i = 0; i < read; ++i)
-            freq[read_buf[i]]++;
+        size_t i = 0;
+        std::array<uint64_t, 256> freq0{}, freq1{}, freq2{}, freq3{};
+
+        for(; i + 4 <= read; i += 4){
+            freq0[read_buf[i]]++;
+            freq1[read_buf[i+1]]++;
+            freq2[read_buf[i+2]]++;
+            freq3[read_buf[i+3]]++;
+        }
+
+        for(; i < read ; ++i)
+            freq0[read_buf[i]]++;
+
+        for(int j = 0; j < 256; ++j)
+            freq[j] += freq0[j]+freq1[j]+freq2[j]+freq3[j];
+
         total_chunks++;
     }
 
