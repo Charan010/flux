@@ -159,6 +159,7 @@ Node* build_decode_tree(const std::array<HuffmanCode, 256>& table) {
     back to decoding bit by bit.
 
     This reduces the bottleneck of reading bit by bit.
+    
 */
 void build_decode_lut(const std::array<HuffmanCode, 256>& table, Node* root, DecodeLUT& lut) {
 

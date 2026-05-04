@@ -8,9 +8,14 @@ namespace fs = std::filesystem;
 
 int main(int argc, char* argv[]) {
 
-    size_t threads = std::thread::hardware_concurrency();
-    if (threads == 0)
-        threads = 4;
+    //size_t threads = std::thread::hardware_concurrency();
+    //if (threads == 0)
+        //threads = 4;
+
+    size_t threads = 6;
+
+    std::cout << "Threads: " << threads << "\n";
+
 
     if (argc < 3) {
         std::cerr << "Usage:\n"
@@ -23,7 +28,7 @@ int main(int argc, char* argv[]) {
 
     try {
 
-        Coordinator coordinator(threads, 1 << 20);
+        Coordinator coordinator(threads, 1 << 22);
 
         if (mode == "-c") {
 

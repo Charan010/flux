@@ -12,7 +12,7 @@ void Coordinator::encode_chunk(std::vector<uint8_t> data, int id, const std::arr
     uint32_t bit_count = 0;
 
     std::vector<uint8_t> encoded;
-    encoded.reserve(data.size() + 4);
+    encoded.reserve(data.size());
 
     encoded.resize(4);
 
@@ -72,6 +72,7 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
         for(; i < read ; ++i)
             freq0[read_buf[i]]++;
 
+        // This helps compiler to optimize to loop unrolling which decreases time to count frequency.
         for(int j = 0; j < 256; ++j)
             freq[j] += freq0[j]+freq1[j]+freq2[j]+freq3[j];
 
@@ -109,7 +110,8 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
 
         in2.read(reinterpret_cast<char*>(read_buf.data()), chunk_size);
         size_t read = in2.gcount();
-        if (read == 0) break;
+        if (read == 0)
+            break;
 
         std::vector<uint8_t> chunk_data(read_buf.begin(), read_buf.begin() + read);
         int id = chunk_id++;
@@ -130,7 +132,7 @@ void Coordinator::decode_chunk(std::vector<uint8_t> encoded, uint32_t bit_count,
     const DecodeLUT &lut, Node *root, ChunkBuffer *buffer, int id){
 
     std::vector<uint8_t> decoded;
-    decoded.reserve(bit_count/2);
+    decoded.reserve((bit_count * 6) / 8); 
 
     uint64_t acc = 0;
     int bits_in_acc = 0;
@@ -177,7 +179,7 @@ void Coordinator::decode_chunk(std::vector<uint8_t> encoded, uint32_t bit_count,
 
             acc &= (1ULL << bits_in_acc) - 1;
 
-            while (true) {
+            while (true) { 
                 if (bits_in_acc == 0 && byte_pos < encoded.size()) {
                     acc = (acc << 8) | encoded[byte_pos++];
                     bits_in_acc += 8;

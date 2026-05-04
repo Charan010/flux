@@ -17,11 +17,9 @@ target_include_directories(flux PRIVATE
 target_compile_options(flux PRIVATE
     -O3
     -march=native
-    -funroll-loops
     -fomit-frame-pointer
-    -falign-functions=64
-    -falign-loops=64
 )
+
 
 set_property(TARGET flux PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 

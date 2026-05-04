@@ -1,52 +1,76 @@
     #include "bit_io.h"
+    #include <cassert>
+    #include <cstring>
+
+    using namespace std;
 
 
-    BitWriter::BitWriter(const std::string& file)
-        : out(file, std::ios::binary) {
-        out.rdbuf()->pubsetbuf(io_buf, sizeof(io_buf));  
+    BitWriter::BitWriter(const string &file_name)
+    : out(file_name, std::ios::binary){
+
+        assert(out.is_open() && "BitWriter: failed to open file");
+        out.rdbuf()-> pubsetbuf(io_buf, sizeof(io_buf));
     }
 
-    void BitWriter::write_bits(uint64_t bits, int count) {
-        acc = (acc << count) | (bits & ((1ULL << count) - 1));
+    void BitWriter::write_bits(uint64_t bits, int count){
+
+        if(count == 0)
+            return;
+
+
+        assert(count >=0 && count <= 64);
+        assert(bits_in_acc >= 0 && bits_in_acc <= 64);
+
+        uint64_t mask = (count == 64) ? ~0ULL : ((1ULL << count) - 1);
+        bits &= mask;
+
+        assert(bits_in_acc + count <= 64);
+
+        acc = (acc << count) | bits;
         bits_in_acc += count;
 
-        int bytes_ready = bits_in_acc / 8;
-        if (bytes_ready > 0) {
-            int shift = bits_in_acc - (bytes_ready * 8);
-            uint64_t to_write = acc >> shift;
+        while(bits_in_acc >= 8){
+            int shift = bits_in_acc - 8;
 
+            uint8_t byte = (acc >> shift) & 0xFF;
+            out.put(static_cast<char>(byte));
 
-            uint8_t buf[8];
-            for (int i = bytes_ready - 1; i >= 0; i--) {
-                buf[i] = to_write & 0xFF;
-                to_write >>= 8;
-            }
-            out.write(reinterpret_cast<const char*>(buf), bytes_ready);
+            bits_in_acc -= 8;
 
-            bits_in_acc = shift;
-            if (shift < 64)
-                acc &= (1ULL << shift) - 1;
-            else
-            acc &= (1ULL << shift) - 1;
+            if (bits_in_acc == 0)
+                acc = 0;
+            else if (bits_in_acc < 64)
+                acc &= ((1ULL << bits_in_acc) - 1);
+
         }
-    }
-
-    void BitWriter::write_bit(int b) {
+    }  
+  
+    void BitWriter::write_bit(int b){
+        assert(b == 0 || b == 1);
         write_bits(b, 1);
-    }
 
+    }
+    
     void BitWriter::write_byte(uint8_t b) {
         write_bits(b, 8);
     }
 
-    void BitWriter::flush() {
-        if (bits_in_acc > 0) {
-            out.put(static_cast<uint8_t>((acc << (8 - bits_in_acc)) & 0xFF));
-            acc = 0;
-            bits_in_acc = 0;
+    void BitWriter::flush(){
+        if(bits_in_acc > 0){
+
+            assert(bits_in_acc < 8);
+
+            uint8_t byte = (acc << (8 - bits_in_acc)) & 0xFF;
+            out.put(static_cast<char>(byte));
+
         }
-        out.flush();  
+
+        acc = 0;
+        bits_in_acc = 0;
+
     }
+    
+
 
     void BitWriter::write_bytes(const std::vector<uint8_t>& data) {
         flush(); 
@@ -60,24 +84,22 @@
     }
 
     void BitReader::refill(int needed){
+        assert(needed >= 0 && needed <= 64); 
 
-        while(bits_in_buf < needed){
-
-            if(bits_in_buf + 8 > 64)
+        while(bits_in_buf < needed && bits_in_buf <= 56){
+            char c;
+            if (!in.get(c)) 
                 break;
-
-            int c = in.get();
-            if(c == EOF)
-                break;
-
-            bitbuf = (bitbuf << 8) |(uint8_t)c;
+            
+            bitbuf = (bitbuf << 8) | static_cast<uint8_t>(c);
             bits_in_buf += 8;
         }
-
     }
+
 
     uint32_t BitReader::peek_bit(int n){
 
+        assert(n > 0 && n <= 32);
         refill(n);
 
         if(bits_in_buf < n)
@@ -88,12 +110,13 @@
     }
 
     void BitReader::consume_bits(int n){
+        assert(n >= 0 && n <= bits_in_buf);
         bits_in_buf -= n;
     }
 
     int BitReader::read_bit(){
-        refill(1);
 
+        refill(1);
 
         if(bits_in_buf == 0)
             return -1;
@@ -103,7 +126,6 @@
 
         return bit;
     }
-
 
 
     uint8_t BitReader::read_byte(){
