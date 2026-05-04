@@ -1,4 +1,4 @@
-# huffman
+# flux
 
 A parallel Huffman encoder/decoder written in C++ from scratch — no compression libraries used.
 
@@ -20,40 +20,44 @@ with just characters length instead of encoding a whole tree on disk.
 
 
 **Decompression pipeline:**
+
 1. Read the 256-byte header and reconstruct the canonical Huffman table deterministically.
 
-2. Build a decode tree from the table.
+2. Build a decode tree from the table. Look up tables(LUT) speed up the process by allowing to look at multiple bits at a time instead of reading bit by bit.
 
-3. For each chunk, read the valid bit count, walk the decode tree bit by bit, and buffered into a vector when we reach a leaf node or character and then written to the file.
-
-
-## Install
-```bash
-cmake -S . -B build
-cmake --build build
-cmake --install build
-
-
-## Usage:
-
-```bash
-huffman -c <absolute-path-to-the-file> (to encode)
-huffman -d <file-to-be-decoded> <file-to-be-dumped> 
-
-```
+3. Chunks are managed by ChunkBuffered and writes in order and to prevent contention, using lock free Buffer.
 
 ## Benchmarks
 
-| Dataset    | Original | Compressed | Ratio  | Throughput |
-|------------|----------|------------|--------|------------|
-| random.bin | 512 MB   | 512 MB     | 0.99×  | 388 MB/s   |
-| zeros.bin  | 512 MB   | 64 MB      | 7.99×  | 879 MB/s   |
-| wiki.txt   | 1.2 GB   | 702 MB     | 1.76×  | 520 MB/s   |
-| big.txt    | 6 MB     | 3.5 MB     | 1.76×  | 187 MB/s   |
+Tested on Ryzen 5 5600H (6 cores), 6 threads, 4MB chunks.
+
+| File | Size | Compressed | Ratio | Comp. Speed | Decomp. Speed |
+|------|------|------------|-------|-------------|---------------|
+| corpus.txt (English text) | 500 MB | 287 MB | 0.57x | 641 MB/s | 820 MB/s |
+| random.dat (urandom) | 100 MB | 100 MB | 1.00x | 513 MB/s | 784 MB/s |
+| zeros.bin (single symbol) | 50 MB | 6.25 MB | 0.12x | 609 MB/s | 740 MB/s |
 
 
-random.bin is not at all compressed and is the same size as before because when the data is random, entropy is high so cannot be compressed. This shows the fundamental limit of
-information theory.
+> random.dat does not compress — high entropy data is incompressible by 
+> definition. This is the fundamental limit of lossless compression.
+
+## Build
+
+```bash
+cmake -S . -B build
+cmake --build build
+```
+
+## Usage
+
+```bash
+# Compress
+flux -c <input_file>          # outputs <input_file>.huf
+
+# Decompress  
+flux -d <file.huf> <output>
+
+```
 
 ## Requirements
 
