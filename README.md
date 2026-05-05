@@ -29,17 +29,15 @@ with just characters length instead of encoding a whole tree on disk.
 
 ## Benchmarks
 
-Tested on Ryzen 5 5600H (6 cores), 6 threads, 4MB chunks.
+All benchmarks were run on a Ryzen 5 5600H (6 cores / 12 threads)  
+Configuration: 6 worker threads, 4 MB chunk size
 
-| File | Size | Compressed | Ratio | Comp. Speed | Decomp. Speed |
-|------|------|------------|-------|-------------|---------------|
-| corpus.txt (English text) | 500 MB | 287 MB | 0.57x | 641 MB/s | 820 MB/s |
-| random.dat (urandom) | 100 MB | 100 MB | 1.00x | 513 MB/s | 784 MB/s |
-| zeros.bin (single symbol) | 50 MB | 6.25 MB | 0.12x | 609 MB/s | 740 MB/s |
+| Dataset | Size | Compressed Size | Ratio | Compression Speed | Decompression Speed |
+|--------|------|-----------------|-------|-------------------|---------------------|
+| English text (corpus.txt) | 500 MB | 287 MB | 0.57 | 641 MB/s | 820 MB/s |
+| Random data (urandom)     | 100 MB | 100 MB | 1.00 | 513 MB/s | 784 MB/s |
+| Repetitive (zeros.bin)    | 50 MB  | 6.25 MB | 0.12 | 609 MB/s | 740 MB/s |
 
-
-> random.dat does not compress — high entropy data is incompressible by 
-> definition. This is the fundamental limit of lossless compression.
 
 ## Build
 
@@ -51,11 +49,18 @@ cmake --build build
 ## Usage
 
 ```bash
-# Compress
-flux -c <input_file>          # outputs <input_file>.huf
+
+// this is a REPL based CLI tool for now :P.
+
+flux
+ -c <input_file> <output_file>          
 
 # Decompress  
-flux -d <file.huf> <output>
+-d <file.huf> <output>
+
+#to verify if both files are same using sha256sum.
+-v <file1> <file2>
+
 
 ```
 

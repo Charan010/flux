@@ -15,6 +15,7 @@ public:
 
     void submit(std::function<void()> job); 
     void shutdown();
+    void wait();
 
     ~Threadpool();
 
@@ -26,6 +27,8 @@ private:
 
     std::mutex mtx;
     std::condition_variable cv;
+    std::condition_variable cv_done;
+    size_t active_workers = 0;
 
     std::atomic_bool stop{false};
 };

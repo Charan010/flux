@@ -22,8 +22,8 @@ struct Node {
 
 
 struct HuffmanCode {
-    uint64_t bits = 0;
-    uint8_t len = 0;
+    uint32_t bits;
+    uint8_t len;
 };
 
 struct DecodeEntry{
@@ -34,7 +34,7 @@ struct DecodeEntry{
     bool is_leaf;
 };
 
-constexpr int LUT_BITS = 12;
+constexpr int LUT_BITS = 15;
 constexpr int LUT_SIZE = 1 << LUT_BITS;
 
 

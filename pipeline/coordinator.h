@@ -18,9 +18,11 @@ private:
 
 public:
     Coordinator(size_t threads, size_t chunk);
-
-    void encode_chunk(std::vector<uint8_t> data, int id, const std::array<HuffmanCode, 256> *tbl, ChunkBuffer *buffer);
-
+    ~Coordinator();
+    
+    void encode_chunk(const uint8_t* data, size_t len, int id,
+    const std::array<HuffmanCode, 256>* tbl, ChunkBuffer* buffer);
+    
     void compress(const std::string &input_file, const std::string &output_file);
 
     void decompress(const std::string& input_file, const std::string& output_file);

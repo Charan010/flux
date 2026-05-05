@@ -1,82 +1,120 @@
 #include <iostream>
 #include <filesystem>
-#include <thread>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <vector>
 
 #include "pipeline/coordinator.h"
+#include "helper.h" // Ensure this is "helper.h" if it's in your local directory
 
 namespace fs = std::filesystem;
 
-int main(int argc, char* argv[]) {
+// ANSI Colors for a Professional CLI
+const std::string RESET = "\033[0m";
+const std::string GREEN = "\033[32m";
+const std::string BLUE  = "\033[34m";
+const std::string RED   = "\033[31m";
+const std::string YELLOW = "\033[33m";
+const std::string BOLD  = "\033[1m";
 
-    //size_t threads = std::thread::hardware_concurrency();
-    //if (threads == 0)
-        //threads = 4;
+void print_header() {
+    std::cout << BLUE << BOLD << "\nFLUX COMPRESSION REPL " << RESET << "(v1.0)\n"
+              << "---------------------------------------------\n"
+              << GREEN << "  -c " << RESET << "<original> <output>   | Compress\n"
+              << GREEN << "  -d " << RESET << "<encoded> <output>    | Decompress\n"
+              << GREEN << "  -v " << RESET << "<file1> <file2>       | Verify SHA-256\n"
+              << RED   << "  exit" << RESET << "                     | Quit\n"
+              << "---------------------------------------------\n\n";
+}
 
-    size_t threads = 6;
+int main() {
 
-    std::cout << "Threads: " << threads << "\n";
+    Coordinator coordinator(6, 1 << 22);
+    print_header();
 
+    while (true) {
+        std::cout << BLUE << BOLD << "flux> " << RESET;
+        std::string line;
+        if (!std::getline(std::cin, line)) break;
 
-    if (argc < 3) {
-        std::cerr << "Usage:\n"
-                  << "  Compress:   ./huffman -c <input_file>\n"
-                  << "  Decompress: ./huffman -d <input_file.huf> <output_file>\n";
-        return 1;
+        std::istringstream iss(line);
+        std::string mode;
+        iss >> mode;
+
+        if (mode.empty()) continue;
+
+        try {
+            if (mode == "exit" || mode == "quit") {
+                break;
+            }
+
+            else if (mode == "-c") {
+                std::string input, output;
+                if (!(iss >> input >> output)) {
+                    std::cout << YELLOW << "  Usage: -c <original_file> <output_file>\n" << RESET;
+                    continue;
+                }
+
+                auto start = std::chrono::high_resolution_clock::now();
+                coordinator.compress(input, output);
+                auto end = std::chrono::high_resolution_clock::now();
+
+                double duration = std::chrono::duration<double>(end - start).count();
+                std::cout << "  └─ " << GREEN << "Compression Complete" << RESET << "\n"
+                          << "     Source: " << input << "\n"
+                          << "     Result: " << output << "\n"
+                          << "     Time:   " << std::fixed << std::setprecision(4) << duration << "s\n";
+            }
+
+            else if (mode == "-d") {
+                std::string input, output;
+                if (!(iss >> input >> output)) {
+                    std::cout << YELLOW << "  Usage: -d <encoded_file> <output_file>\n" << RESET;
+                    continue;
+                }
+
+                auto start = std::chrono::high_resolution_clock::now();
+                coordinator.decompress(input, output);
+                auto end = std::chrono::high_resolution_clock::now();
+
+                double duration = std::chrono::duration<double>(end - start).count();
+                std::cout << "  └─ " << GREEN << "Decompression Complete" << RESET << "\n"
+                          << "     Source: " << input << "\n"
+                          << "     Result: " << output << "\n"
+                          << "     Time:   " << std::fixed << std::setprecision(4) << duration << "s\n";
+            }
+
+            else if (mode == "-v") {
+                std::string f1, f2;
+                if (!(iss >> f1 >> f2)) {
+                    std::cout << YELLOW << "  Usage: -v <file1> <file2>\n" << RESET;
+                    continue;
+                }
+                
+                std::cout << "  " << BLUE << "Checking SHA-256 hashes..." << RESET << "\n";
+                std::string hash1 = get_sha256(f1);
+                std::string hash2 = get_sha256(f2);
+
+                if (hash1 != "ERROR" && hash1 == hash2) {
+                    std::cout << "  └─ " << GREEN << BOLD << "MATCH: " << RESET << "Files are identical.\n"
+                              << "     Hash: " << hash1 << "\n";
+                } else {
+                    std::cout << "  └─ " << RED << BOLD << "MISMATCH: " << RESET << "Data difference detected!\n";
+                    std::cout << "     " << f1 << ": " << (hash1 == "ERROR" ? RED + "Failed to read" : hash1) << RESET << "\n";
+                    std::cout << "     " << f2 << ": " << (hash2 == "ERROR" ? RED + "Failed to read" : hash2) << RESET << "\n";
+                }
+            }
+
+            else {
+                std::cout << RED << "  Unknown command. Type -c, -d, -v, or exit.\n" << RESET;
+            }
+
+        } catch (const std::exception& e) {
+            std::cerr << RED << BOLD << "  Error: " << RESET << e.what() << "\n";
+        }
     }
 
-    std::string mode = argv[1];
-
-    try {
-
-        Coordinator coordinator(threads, 1 << 22);
-
-        if (mode == "-c") {
-
-            fs::path input_path = fs::absolute(argv[2]);
-
-            if (!fs::exists(input_path)) {
-                std::cerr << "Input file does not exist\n";
-                return 1;
-            }
-
-            fs::path output_path =
-                input_path.parent_path() /
-                (input_path.stem().string() + ".huf");
-
-            coordinator.compress(input_path.string(), output_path.string());
-
-            std::cout << "Compressed → " << output_path << "\n";
-        }
-
-        else if (mode == "-d") {
-
-            if (argc < 4) {
-                std::cerr << "Usage: ./huffman -d <input_file.huf> <output_file>\n";
-                return 1;
-            }
-
-            fs::path input_path = fs::absolute(argv[2]);
-            fs::path output_path = fs::absolute(argv[3]);
-
-            if (!fs::exists(input_path)) {
-                std::cerr << "Input file does not exist\n";
-                return 1;
-            }
-
-            coordinator.decompress(input_path.string(), output_path.string());
-
-            std::cout << "Decompressed → " << output_path << "\n";
-        }
-
-        else {
-            std::cerr << "Unknown mode: " << mode << "\n";
-            return 1;
-        }
-
-    } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n";
-        return 1;
-    }
-
+    std::cout << BLUE << "Cleaning up ...\n" << RESET;
     return 0;
 }

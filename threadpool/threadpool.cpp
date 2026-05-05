@@ -1,4 +1,5 @@
 #include "threadpool.h"
+#include <stdexcept>
 
 Threadpool::Threadpool(size_t num_threads) {
 
@@ -16,6 +17,10 @@ void Threadpool::submit(std::function<void()> job) {
 
     {
         std::lock_guard<std::mutex> lock(mtx);
+
+        if (stop.load())
+            throw std::runtime_error("submit on stopped Threadpool");
+
         jobs.push(std::move(job));
     }
 
@@ -36,6 +41,14 @@ void Threadpool::shutdown() {
     }
 }
 
+void Threadpool::wait() {
+    std::unique_lock<std::mutex> lock(mtx);
+
+    cv_done.wait(lock, [this]() {
+        return jobs.empty() && active_workers == 0;
+    });
+}
+
 void Threadpool::worker_loop() {
 
     while (true) {
@@ -52,8 +65,18 @@ void Threadpool::worker_loop() {
         auto job = std::move(jobs.front());
         jobs.pop();
 
+        active_workers++;
+
         lock.unlock();
 
-        job(); 
+        job();
+
+        lock.lock();
+
+        active_workers--;
+
+        if (jobs.empty() && active_workers == 0) {
+            cv_done.notify_all();
+        }
     }
 }

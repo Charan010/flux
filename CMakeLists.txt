@@ -6,6 +6,7 @@ add_executable(flux
     pipeline/chunk_buffer.cpp
     pipeline/chunk.cpp
     threadpool/threadpool.cpp
+    helper.cpp
 )
 
 target_include_directories(flux PRIVATE
@@ -19,7 +20,6 @@ target_compile_options(flux PRIVATE
     -march=native
     -fomit-frame-pointer
 )
-
 
 set_property(TARGET flux PROPERTY INTERPROCEDURAL_OPTIMIZATION TRUE)
 
