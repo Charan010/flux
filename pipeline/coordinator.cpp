@@ -20,11 +20,7 @@
     thread_local std::vector<uint8_t> encoded;
     encoded.clear();
 
-    // reserve once, reused forever
-    if (encoded.capacity() < len * 2)
-            encoded.reserve(len * 2);
-
-    encoded.resize(4); // header space
+    encoded.resize(len * 2 + 64 + 4);
 
     uint64_t acc = 0;
     int bits_in_acc = 0;
@@ -48,10 +44,9 @@
 
             bits_in_acc -= 8;
             tmp[t++] = (acc >> bits_in_acc) & 0xFF;
-            if (t >= 56) {
-                if (pos + t > encoded.size())
-                    encoded.resize(pos + t);
-                memcpy(encoded.data() + pos, tmp, t);
+            if (__builtin_expect(t >= 56, 0)) {
+                uint8_t* out = encoded.data();
+                memcpy(out + pos, tmp, t);
                 pos += t;
                 t  = 0;
              }
@@ -63,9 +58,6 @@
         tmp[t++] = static_cast<uint8_t>(acc << (8 - bits_in_acc));
 
     if (t > 0) {
-        if (pos + t > encoded.size())
-            encoded.resize(pos + t);
-
         memcpy(encoded.data() + pos, tmp, t);
         pos += t;
     }
@@ -126,10 +118,12 @@
             freq[j] = freq0[j] + freq1[j] + freq2[j] + freq3[j];
 
         int total_chunks = (file_size + chunk_size - 1) / chunk_size;
-        auto root = std::unique_ptr<Node>(build_huffman_tree(freq));
+
+        std::vector<Node> encode_storage;
+        Node* root = build_huffman_tree(freq, encode_storage);
 
         std::array<uint8_t, 256> lengths{};
-        compute_lengths(root.get(), 0, lengths);
+        compute_lengths(root, 0, lengths);
 
         std::array<HuffmanCode, 256> table{};
         generate_canonical_table(lengths, table);
@@ -173,13 +167,17 @@
     }
 
 
-    void Coordinator::decode_chunk(std::vector<uint8_t> &&encoded, uint32_t bit_count, const DecodeLUT& lut,
+    // ...)
+
+
+
+void Coordinator::decode_chunk(const uint8_t* encoded, size_t encoded_size, uint32_t bit_count, const DecodeLUT& lut,
     const FlatTree& flat, ChunkBuffer* buffer, int id){
 
     thread_local std::vector<uint8_t> decoded;
     decoded.clear();
 
-    decoded.reserve(bit_count);
+    decoded.reserve(bit_count/8);
 
     uint64_t acc = 0;
     int bits_in_acc = 0;
@@ -188,7 +186,7 @@
 
     while (bits_read < bit_count) {
 
-        while (bits_in_acc < LUT_BITS && byte_pos < encoded.size()) {
+        while (bits_in_acc < LUT_BITS && byte_pos < encoded_size) {
             acc = (acc << 8) | encoded[byte_pos++];
             bits_in_acc += 8;
         }
@@ -224,7 +222,7 @@
 
                 if(bits_in_acc == 0){
                     
-                    if(byte_pos >= encoded.size())
+                    if(byte_pos >= encoded_size)
                         break;
 
                     acc = (acc << 8) | encoded[byte_pos++];
@@ -248,47 +246,81 @@
     std::vector<uint8_t> out;
     out.swap(decoded);
     buffer->submit_chunk(Chunk(id, std::move(out)));
+
 }
 
-    void Coordinator::decompress(const std::string& input, const std::string& output) {
 
-        BitReader br(input);
+void Coordinator::decompress(const std::string& input, const std::string& output) {
 
-        std::array<uint8_t, 256> lengths{};
-        read_lengths(lengths, br);
+    int fd = open(input.c_str(), O_RDONLY);
+    if (fd < 0)
+        throw std::runtime_error("Cannot open file");
 
-        uint32_t total_len   = read_uint32(br);
-        uint32_t total_chunks = read_uint32(br);
+    struct stat st;
+    fstat(fd, &st);
+    size_t file_size = st.st_size;
 
+    uint8_t* file_ptr = static_cast<uint8_t*>(
+        mmap(nullptr, file_size, PROT_READ, MAP_PRIVATE, fd, 0));
 
-        std::array<HuffmanCode, 256> table{};
-        generate_canonical_table(lengths, table);
-
-        auto root_ptr = std::unique_ptr<Node>(build_decode_tree(table));
-        FlatTree flat;
-
-        flatten_tree(root_ptr.get(),flat);
-
-        DecodeLUT lut{};
-        build_decode_lut(table, flat, lut);
-
-        BitWriter bw(output);
-        ChunkBuffer buffer(bw, total_chunks);
-
-        for (uint32_t id = 0; id < total_chunks; id++) {
-
-            uint32_t bit_count = read_uint32(br);
-            uint32_t byte_size = (bit_count + 7) / 8;
-
-            std::vector<uint8_t> encoded(byte_size);
-            br.read_bytes(encoded.data(), byte_size);
-
-            pool.submit([this, encoded = std::move(encoded), bit_count, &buffer, &lut, &flat, id]() mutable {
-                decode_chunk(std::move(encoded), bit_count, lut, flat, &buffer, id);
-            });
-        }
-
-        pool.wait();   
-        buffer.finish();
-        bw.flush();
+    if (file_ptr == MAP_FAILED) {
+        close(fd);
+        throw std::runtime_error("mmap failed");
     }
+
+    madvise(file_ptr, file_size, MADV_SEQUENTIAL);
+    close(fd); // safe to close fd after mmap
+
+    size_t pos = 0;
+
+    // read lengths (256 bytes)
+    std::array<uint8_t, 256> lengths{};
+    memcpy(lengths.data(), file_ptr + pos, 256);
+    pos += 256;
+
+    // read total_len and total_chunks
+    auto read_u32 = [&]() -> uint32_t {
+        uint32_t x = (file_ptr[pos] << 24) | (file_ptr[pos+1] << 16)
+                   | (file_ptr[pos+2] << 8) | file_ptr[pos+3];
+        pos += 4;
+        return x;
+    };
+
+    uint32_t total_len    = read_u32();
+    uint32_t total_chunks = read_u32();
+
+    std::array<HuffmanCode, 256> table{};
+    generate_canonical_table(lengths, table);
+
+    std::vector<Node> decode_storage;
+    Node* root_ptr = build_decode_tree(table, decode_storage);
+
+    FlatTree flat;
+    flat.reserve(512);
+    flatten_tree(root_ptr, flat);
+
+    DecodeLUT lut{};
+    build_decode_lut(table, flat, lut);
+
+    BitWriter bw(output);
+    ChunkBuffer buffer(bw, total_chunks);
+
+    for (uint32_t id = 0; id < total_chunks; id++) {
+
+        uint32_t bit_count = read_u32();
+        uint32_t byte_size = (bit_count + 7) / 8;
+
+        const uint8_t* chunk_ptr = file_ptr + pos;
+        pos += byte_size;
+
+        pool.submit([this, chunk_ptr, byte_size, bit_count, &buffer, &lut, &flat, id]() {
+            decode_chunk(chunk_ptr, byte_size, bit_count, lut, flat, &buffer, id);
+        });
+    }
+
+    pool.wait();
+    buffer.finish();
+    bw.flush();
+
+    munmap(file_ptr, file_size);
+}

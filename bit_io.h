@@ -3,10 +3,11 @@
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
+#include <memory>
 
 struct BitWriter {
-    static constexpr size_t BUF_SIZE = 1 * 1024 * 1024; 
-    char io_buf[BUF_SIZE];
+    std::unique_ptr<char[]> io_buf;
+    static constexpr size_t BUF_SIZE = 4 * 1024 * 1024;
 
     uint64_t acc = 0;
     int bits_in_acc = 0;
@@ -22,8 +23,8 @@ struct BitWriter {
 
 
 struct BitReader {
-    static constexpr size_t BUF_SIZE = 1 * 1024 * 1024;  
-    char io_buf[BUF_SIZE];
+    static constexpr size_t BUF_SIZE = 4 * 1024 * 1024;  
+    std::unique_ptr<char[]> io_buf;
 
     std::ifstream in;
     uint64_t bitbuf = 0;
@@ -37,5 +38,7 @@ struct BitReader {
     uint8_t read_byte();
     void align_to_byte();
     void read_bytes(uint8_t* dst, size_t n);
+
+    
 
 };

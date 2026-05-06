@@ -3,16 +3,11 @@
 #include <array>
 
 
-Node::Node(uint8_t c, uint64_t f)
-    : ch(c), freq(f), left(nullptr), right(nullptr) {}
+Node::Node(Node* l, Node* r): ch(0), freq(l->freq + r->freq), left(l),right(r) {}
 
+Node::Node(uint8_t c, uint64_t f) : ch(c), freq(f), left(nullptr), right(nullptr) {}
 
-Node::Node(std::unique_ptr<Node> l, std::unique_ptr<Node> r)
-    : ch(0), freq(l->freq + r->freq), 
-      left(std::move(l)), right(std::move(r)) {}
-    
-Node::Node()
-    : ch(0), freq(0), left(nullptr), right(nullptr) {}
+Node::Node():ch(0), freq(0), left(nullptr), right(nullptr) {}
 
 bool Compare::operator()(Node* a, Node* b) {
     return a->freq > b->freq;
@@ -35,9 +30,9 @@ uint16_t flatten_tree(Node* root, FlatTree& flat){
         return idx;
     }
 
-    flat[idx].left = flatten_tree(root->left.get(), flat);
+    flat[idx].left = flatten_tree(root->left, flat);
 
-    flat[idx].right = flatten_tree(root->right.get(), flat);
+    flat[idx].right = flatten_tree(root->right, flat);
     return idx;
 }
 
@@ -47,26 +42,45 @@ uint16_t flatten_tree(Node* root, FlatTree& flat){
     building huffman tree by using priority queue where most frequent characters are 
     assigned shorter codes.
 */
-Node* build_huffman_tree(const FrequencyTable& freq) {
+Node* build_huffman_tree( const FrequencyTable& freq, std::vector<Node>& storage){
+
     std::priority_queue<Node*, std::vector<Node*>, Compare> pq;
-
-    for (int i = 0; i < 256; i++)
+    int sym_count = 0;
+    for (int i = 0; i < 256; ++i){
         if (freq[i] > 0)
-            pq.push(new Node((uint8_t)i, freq[i]));
+            sym_count++;
+    } 
 
-    while (pq.size() > 1) {
-        auto a = std::unique_ptr<Node>(pq.top()); pq.pop();
-        auto b = std::unique_ptr<Node>(pq.top()); pq.pop();
-        pq.push(new Node(std::move(a), std::move(b)));
+    storage.reserve(2 * sym_count);
+
+    for(int i = 0 ; i < 256; ++i){
+        if(freq[i] > 0){
+            storage.emplace_back((uint8_t)i, freq[i]);
+            pq.push(&storage.back());
+
+        }
+    }
+
+    while(pq.size() > 1){
+
+        Node *a = pq.top();
+        pq.pop();
+
+        Node *b = pq.top();
+        pq.pop();
+
+        storage.emplace_back(a, b);
+        pq.push(&storage.back());
     }
 
     return pq.top();
+
 }
 
+void compute_lengths(Node* root, uint8_t depth, std::array<uint8_t, 256>& lengths){
 
-void compute_lengths(Node* root, uint8_t depth, std::array<uint8_t, 256>& lengths)
-{
-    if (!root) return;
+    if (!root)
+        return;
 
     const bool is_leaf = (!root->left && !root->right);
 
@@ -75,8 +89,8 @@ void compute_lengths(Node* root, uint8_t depth, std::array<uint8_t, 256>& length
         return;
     }
 
-    compute_lengths(root->left.get(),  depth + 1, lengths);
-    compute_lengths(root->right.get(), depth + 1, lengths);
+    compute_lengths(root->left,  depth + 1, lengths);
+    compute_lengths(root->right, depth + 1, lengths);
 }
 
 
@@ -141,30 +155,41 @@ void write_uint32(BitWriter& bw, uint32_t x) {
     bw.write_byte( x        & 0xFF);
 }
 
-Node* build_decode_tree(const std::array<HuffmanCode, 256>& table) {
-    Node* root = new Node();
+Node* build_decode_tree(const std::array<HuffmanCode, 256>& table, std::vector<Node>& storage){
 
-    for (int sym = 0; sym < 256; sym++) {
+    storage.reserve(512);
+    storage.emplace_back();
+
+    Node* root = &storage.back();
+
+    for(int sym = 0; sym < 256; sym++) {
+
         const auto& code = table[sym];
-        if (code.len == 0) continue;
+
+        if (code.len == 0)
+            continue;
 
         Node* curr = root;
 
         for (int i = code.len - 1; i >= 0; i--) {
             int bit = (code.bits >> i) & 1;
-
             if (bit == 0) {
-                if (!curr->left)
-                    curr->left = std::make_unique<Node>();
-                curr = curr->left.get();
-            } else {
-                if (!curr->right)
-                    curr->right = std::make_unique<Node>();
-                curr = curr->right.get();
+                if (!curr->left) {
+                    storage.emplace_back();
+                    curr->left = &storage.back();
+                }
+                curr = curr->left;
+
+            }else {
+                if (!curr->right){
+                    storage.emplace_back();
+                    curr->right = &storage.back();
+                }
+                curr = curr->right;
             }
         }
 
-        curr->ch = sym;
+        curr->ch = static_cast<uint8_t>(sym);
     }
 
     return root;
