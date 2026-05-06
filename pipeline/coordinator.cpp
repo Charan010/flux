@@ -44,44 +44,19 @@
         acc = (acc << code.len) | code.bits;
         bits_in_acc += code.len;
 
-        while (bits_in_acc >= 32) {
-            bits_in_acc -= 32;
+        while (bits_in_acc >= 8){
 
-            uint32_t out32 = (acc >> bits_in_acc) & 0xFFFFFFFFu;
-
-            tmp[t++] = (out32 >> 24) & 0xFF;
-            tmp[t++] = (out32 >> 16) & 0xFF;
-            tmp[t++] = (out32 >> 8)  & 0xFF;
-            tmp[t++] = (out32 >> 0)  & 0xFF;
-
-            acc &= (bits_in_acc > 0) ? ((1ULL << bits_in_acc) - 1) : 0;
-
-            if (t >= 56) {
-                if (pos + t > encoded.size())
-                    encoded.resize(pos + t);
-
-                memcpy(encoded.data() + pos, tmp, t);
-                pos += t;
-                t = 0;
-            }
-        }
-
-        while (bits_in_acc >= 8) {
             bits_in_acc -= 8;
-
             tmp[t++] = (acc >> bits_in_acc) & 0xFF;
-
-            acc &= (bits_in_acc > 0) ? ((1ULL << bits_in_acc) - 1) : 0;
-
             if (t >= 56) {
                 if (pos + t > encoded.size())
                     encoded.resize(pos + t);
-
                 memcpy(encoded.data() + pos, tmp, t);
                 pos += t;
-                t = 0;
-            }
+                t  = 0;
+             }
         }
+  
     }
 
     if (bits_in_acc > 0)
@@ -198,15 +173,13 @@
     }
 
 
-    void Coordinator::decode_chunk(std::vector<uint8_t> encoded, uint32_t bit_count,
-    const DecodeLUT &lut, Node *root,
-    ChunkBuffer *buffer, int id)
-{
+    void Coordinator::decode_chunk(std::vector<uint8_t> &&encoded, uint32_t bit_count, const DecodeLUT& lut,
+    const FlatTree& flat, ChunkBuffer* buffer, int id){
+
     thread_local std::vector<uint8_t> decoded;
     decoded.clear();
 
-    if (decoded.capacity() < (bit_count * 6) / 8)
-        decoded.reserve((bit_count * 6) / 8);
+    decoded.reserve(bit_count);
 
     uint64_t acc = 0;
     int bits_in_acc = 0;
@@ -240,30 +213,32 @@
             bits_in_acc -= entry.bits;
             bits_read += entry.bits;
 
-            acc &= (1ULL << bits_in_acc) - 1;
-
         } else {
-            Node* cur = entry.next;
+
+            uint16_t cur = entry.next_index;
 
             bits_in_acc -= entry.bits;
             bits_read += entry.bits;
 
-            acc &= (1ULL << bits_in_acc) - 1;
-
             while (true) {
-                if (bits_in_acc == 0 && byte_pos < encoded.size()) {
+
+                if(bits_in_acc == 0){
+                    
+                    if(byte_pos >= encoded.size())
+                        break;
+
                     acc = (acc << 8) | encoded[byte_pos++];
-                    bits_in_acc += 8;
+                    bits_in_acc += 8; 
                 }
 
                 int bit = (acc >> (bits_in_acc - 1)) & 1;
                 bits_in_acc--;
                 bits_read++;
 
-                cur = bit ? cur->right.get() : cur->left.get();
+                cur = bit ? flat[cur].right : flat[cur].left;
 
-                if (!cur->left && !cur->right) {
-                    decoded.push_back(cur->ch);
+                if(flat[cur].is_leaf){
+                    decoded.push_back(flat[cur].symbol);
                     break;
                 }
             }
@@ -290,10 +265,12 @@
         generate_canonical_table(lengths, table);
 
         auto root_ptr = std::unique_ptr<Node>(build_decode_tree(table));
-        Node* root = root_ptr.get();
+        FlatTree flat;
+
+        flatten_tree(root_ptr.get(),flat);
 
         DecodeLUT lut{};
-        build_decode_lut(table, root, lut);
+        build_decode_lut(table, flat, lut);
 
         BitWriter bw(output);
         ChunkBuffer buffer(bw, total_chunks);
@@ -306,8 +283,8 @@
             std::vector<uint8_t> encoded(byte_size);
             br.read_bytes(encoded.data(), byte_size);
 
-            pool.submit([this, encoded = std::move(encoded), bit_count, &buffer, &lut, root, id]() mutable {
-                decode_chunk(std::move(encoded), bit_count, lut, root, &buffer, id);
+            pool.submit([this, encoded = std::move(encoded), bit_count, &buffer, &lut, &flat, id]() mutable {
+                decode_chunk(std::move(encoded), bit_count, lut, flat, &buffer, id);
             });
         }
 

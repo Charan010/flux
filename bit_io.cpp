@@ -64,7 +64,6 @@
             out.put(static_cast<char>(byte));
 
         }
-
         acc = 0;
         bits_in_acc = 0;
 

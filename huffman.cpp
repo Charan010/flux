@@ -19,6 +19,30 @@ bool Compare::operator()(Node* a, Node* b) {
 }
 
 
+uint16_t flatten_tree(Node* root, FlatTree& flat){
+    
+    uint16_t idx = static_cast<uint16_t>(flat.size());
+    flat.push_back({0, 0, 0, false});
+
+    bool is_leaf = (!root->left && !root->right);
+
+    flat[idx].is_leaf = is_leaf;
+
+    if(is_leaf){
+        flat[idx].symbol = root->ch;
+        flat[idx].left = 0;
+        flat[idx].right = 0;
+        return idx;
+    }
+
+    flat[idx].left = flatten_tree(root->left.get(), flat);
+
+    flat[idx].right = flatten_tree(root->right.get(), flat);
+    return idx;
+}
+
+
+
 /*
     building huffman tree by using priority queue where most frequent characters are 
     assigned shorter codes.
@@ -161,49 +185,52 @@ Node* build_decode_tree(const std::array<HuffmanCode, 256>& table) {
     This reduces the bottleneck of reading bit by bit.
     
 */
-void build_decode_lut(const std::array<HuffmanCode, 256>& table, Node* root, DecodeLUT& lut) {
-
-    for (uint16_t sym = 0; sym < 256; ++sym) {
-
+void build_decode_lut(const std::array<HuffmanCode, 256>& table, const FlatTree& flat, DecodeLUT& lut){
+    
+    for (uint16_t sym = 0; sym < 256; ++sym){
+        
         const HuffmanCode& code = table[sym];
         const uint8_t len = code.len;
 
         if (len == 0)
             continue;
 
-        if (len <= LUT_BITS) {
+        if (len <= LUT_BITS){
 
             const uint32_t shift = LUT_BITS - len;
             const uint32_t start = code.bits << shift;
-            const uint32_t end   = start + (1u << shift);
+            const uint32_t end =start + (1u << shift);
 
             const uint8_t symbol = static_cast<uint8_t>(sym);
 
-            for (uint32_t i = start; i < end; ++i) {        
-                auto& e   = lut[i];
-                e.symbol  = symbol;
-                e.bits    = len;
+            for (uint32_t i = start; i < end; ++i){
+                auto& e = lut[i];
+                e.symbol = symbol;
+                e.bits = len;
                 e.is_leaf = true;
+                e.has_next = false;
             }
+        }
 
-        } else {
-
+        else{
+            
             const uint32_t prefix = code.bits >> (len - LUT_BITS);
             auto& entry = lut[prefix];
 
-            if (entry.next == nullptr) {
+            if(entry.has_next)
+                continue;
 
-                Node* node = root;
+            uint16_t node_idx = 0;
 
-                for (int i = LUT_BITS - 1; i >= 0; --i) {
-                    const int bit = (prefix >> i) & 1;
-                    node = bit ? node->right.get() : node->left.get();
-                }
-
-                entry.next    = node;  
-                entry.bits    = LUT_BITS;
-                entry.is_leaf = false;
+            for (int i = LUT_BITS - 1; i >= 0; --i){
+                int bit = (prefix >> i) & 1;
+                node_idx = bit ? flat[node_idx].right : flat[node_idx].left;
             }
+
+            entry.next_index = node_idx;
+            entry.bits = LUT_BITS;
+            entry.is_leaf =false;
+            entry.has_next = true;
         }
     }
 }

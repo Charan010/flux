@@ -104,9 +104,9 @@ void ChunkBuffer::writer_loop(){
 }
 
 void ChunkBuffer::finish() {
-    done.store(true, std::memory_order_release);
+    if (done.exchange(true, std::memory_order_acq_rel))
+        return; 
     sleep_cv.notify_all();
-
     if (writer_thread.joinable())
         writer_thread.join();
 }

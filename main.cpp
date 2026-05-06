@@ -6,11 +6,10 @@
 #include <vector>
 
 #include "pipeline/coordinator.h"
-#include "helper.h" // Ensure this is "helper.h" if it's in your local directory
+#include "helper.h" 
 
 namespace fs = std::filesystem;
 
-// ANSI Colors for a Professional CLI
 const std::string RESET = "\033[0m";
 const std::string GREEN = "\033[32m";
 const std::string BLUE  = "\033[34m";
