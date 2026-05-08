@@ -37,6 +37,8 @@ private:
         std::vector<uint8_t> data;
 
         uint32_t bit_count = 0;
+        uint32_t original_size;
+
 
         Slot() = default;
 
@@ -58,6 +60,7 @@ private:
 
     std::mutex sleep_mtx;
     std::condition_variable sleep_cv;
+    
 
     std::atomic<bool> done{false};
 

@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <vector>
 #include <memory>
+#include <cstring>
 
 struct BitWriter {
     std::unique_ptr<char[]> io_buf;
@@ -23,20 +24,39 @@ struct BitWriter {
 
 
 struct BitReader {
-
+    
     const uint8_t* data;
     size_t size;
 
     size_t byte_pos = 0;
 
-    uint64_t bitbuf = 0;
+    __uint128_t bitbuf = 0;
     int bits_in_buf = 0;
 
     BitReader(const uint8_t* ptr, size_t len);
 
-    void refill();
-    uint32_t peek_bits(int n);
-    void consume_bits(int n);
+    inline void refill() {
+        while(bits_in_buf <=  120 && byte_pos < size) {
+            bitbuf = (bitbuf << 8) | data[byte_pos++];
+            bits_in_buf += 8;
+        }
+    }
+
+    inline uint32_t peek_bits(int n) {
+        if(n == 0)
+            return 0;
+
+        refill();
+        if(bits_in_buf < n)
+            return static_cast<uint32_t>((bitbuf << (n - bits_in_buf)) & ((((__uint128_t)1 << n) - 1)) - 1));
+        return static_cast<uint32_t>((bitbuf >> (bits_in_buf - n)) & ((((__uint128_t)1 << n) - 1));
+    }
+
+    inline void consume_bits(int n) {
+        bits_in_buf -= n;
+    }
+
+
     int read_bit();
     uint8_t read_byte();
     void align_to_byte();

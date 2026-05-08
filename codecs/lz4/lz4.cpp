@@ -1,0 +1,291 @@
+#include <bits/stdc++.h>
+using namespace std;
+
+constexpr uint32_t MAX_CHAINS = 1;
+constexpr uint32_t HASH_BITS = 18;
+
+
+struct MatchFinder {
+
+    static constexpr uint32_t EMPTY = UINT32_MAX;
+    static constexpr size_t HASH_SIZE = 1 << HASH_BITS;
+
+    alignas(64) uint32_t head[HASH_SIZE];
+
+    MatchFinder() {
+        std::fill(head, head + HASH_SIZE, EMPTY);
+    }
+
+    inline uint32_t get_head(uint32_t hash) const {
+        return head[hash];
+    }
+
+    inline void insert(uint32_t hash, uint32_t pos) {
+        head[hash] = pos;
+    }
+};
+
+
+inline uint32_t read32(const void *ptr){
+
+    uint32_t value;
+    std::memcpy(&value, ptr,sizeof(value));
+
+    return value;
+}
+
+
+inline uint64_t read64(const void *ptr){
+    
+    uint64_t value;
+    std::memcpy(&value, ptr, sizeof(value));
+
+    return value;
+}
+
+
+inline uint32_t get_hash(const uint8_t* ptr){
+    
+    constexpr uint32_t PRIME = 2654435761u;
+    uint32_t value = read32(ptr);
+    return (value * PRIME) >> (32 - HASH_BITS);
+
+}
+
+inline size_t count_match(const uint8_t* current, const uint8_t* candidate, const uint8_t* input_end){
+    
+    const uint8_t* start = current;
+
+    while(current + 8 <= input_end && candidate + 8 <= input_end){
+
+        uint64_t diff = read64(current) ^ read64(candidate);
+
+        if(diff == 0){
+            current += 8;
+            candidate += 8;
+        }
+
+        else
+            return (current - start) + (__builtin_ctzll(diff) >> 3);
+        
+    }
+
+    
+
+    while(current < input_end && candidate < input_end && *current == *candidate){
+        ++current;
+        ++candidate;
+    }
+
+
+    return current - start;
+}
+
+inline uint8_t* emit_length(uint8_t *ptr, size_t length){
+     
+    while(length >= 255){
+        *ptr++ = 255 ;
+        length -= 255;
+    }
+
+    *ptr++ = length;
+    return ptr;
+
+}
+
+inline uint8_t  *emit_sequence(uint8_t *ptr, const uint8_t *literals, size_t literal_length, uint16_t offset, 
+    size_t match_length){
+
+    uint8_t literal_nibble = static_cast<uint8_t>(std::min<size_t>(15, literal_length));
+    uint8_t match_nibble = static_cast<uint8_t>(std::min<size_t>(match_length-4, 15));
+
+
+    uint8_t token = static_cast<uint8_t>((literal_nibble << 4) | match_nibble);
+    *ptr++ = token;
+
+    if(literal_length >= 15)
+        ptr = emit_length(ptr, literal_length- 15);
+
+    //write literals.
+    std::memcpy(ptr, literals, literal_length);
+    ptr += literal_length;
+    
+
+    *ptr++ = (offset & 0xFF);
+    *ptr++ = (offset >> 8);
+
+    size_t remaining_match_len =  match_length - 4;
+
+    if(remaining_match_len >= 15)
+        ptr = emit_length(ptr, remaining_match_len -15);
+
+    return ptr;
+}
+
+size_t encoder(const uint8_t* __restrict input, size_t input_length, uint8_t* output){
+
+    MatchFinder match_finder;
+
+    size_t ip = 0;
+    size_t anchor = 0;
+
+    size_t step = 1;
+
+    uint8_t* op = output;
+
+    const uint8_t* input_end = input + input_length;
+
+    while (ip + 4 < input_length) {
+
+        const uint8_t* current = input + ip;
+        uint32_t hash = get_hash(current);
+
+        uint32_t candidate = match_finder.head[hash];
+
+        match_finder.head[hash] = static_cast<uint32_t>(ip);
+
+        size_t best_match_length = 0;
+        size_t best_match_position = 0;
+
+
+        if(candidate != MatchFinder::EMPTY &&  candidate < ip){
+
+            uint32_t offset = static_cast<uint32_t>(ip - candidate);
+
+            if(offset <= 65535 && read32(current) == read32(input + candidate)){
+
+                best_match_length = 4 + count_match(current + 4, input + candidate + 4, input_end);
+                best_match_position = candidate;
+            }
+        }
+
+        if (__builtin_expect(best_match_length < 4, 1)) {
+            ip += 1; 
+            continue;
+        }
+
+        step = 1;
+
+        size_t literal_length = ip - anchor;
+
+        uint16_t offset = static_cast<uint16_t>(ip - best_match_position);
+
+        op = emit_sequence(op, input + anchor, literal_length, offset, best_match_length);
+
+        size_t match_end  = ip + best_match_length;
+
+        ++ip;
+
+        while (ip < match_end) {
+            uint32_t h = get_hash(input + ip);
+            match_finder.head[h] = static_cast<uint32_t>(ip);
+            ++ip;
+        }
+
+        anchor = ip;
+    }
+
+    size_t remaining_literals = input_length - anchor;
+
+    uint8_t token = static_cast<uint8_t>(std::min<size_t>(remaining_literals, 15) << 4);
+    *op++ = token;
+
+    if (remaining_literals >= 15)
+        op = emit_length(op, remaining_literals - 15);
+    
+
+    std::memcpy(op, &input[anchor], remaining_literals);
+    op += remaining_literals;
+
+    return static_cast<size_t>(op - output);
+
+}
+
+__attribute__((always_inline)) inline uint32_t read_length(const uint8_t* input, size_t input_len,
+    size_t& ip, uint32_t initial){
+
+    uint32_t length = initial;
+
+    if (length != 15)
+        return length;
+
+    uint8_t extra;
+
+    do {
+
+        extra = input[ip++];
+        length += extra;
+
+    } while (extra == 255);
+
+    return length;
+
+}
+
+size_t decoder(const uint8_t* input, size_t input_len, uint8_t* output){
+
+    size_t ip = 0;
+    uint8_t* op = output;
+
+    while (ip < input_len) {
+
+
+        uint8_t token = input[ip++];
+        uint32_t literal_len = token >> 4;
+        uint32_t match_len = token & 0x0F;
+
+        literal_len = read_length(
+            input,
+            input_len,
+            ip,
+            literal_len
+        );
+
+        if (ip + literal_len > input_len) {
+            throw std::runtime_error("corrupt literals");
+        }
+
+        std::memcpy(
+            op,
+            input + ip,
+            literal_len
+        );
+
+        op += literal_len;
+        ip += literal_len;
+
+        if (ip >= input_len) {
+            break;
+        }
+
+        if (ip + 2 > input_len) {
+            throw std::runtime_error("corrupt offset");
+        }
+
+        uint16_t offset = input[ip] | (input[ip + 1] << 8);
+        ip += 2;
+
+        if (offset == 0 || offset > (size_t)(op - output)) {
+            throw std::runtime_error("invalid offset");
+        }
+
+        match_len = read_length(input, input_len, ip, match_len);
+        match_len += 4;
+
+        uint8_t* match = op - offset;
+        if(offset >= 8){
+            while(match_len >= 8){
+                
+                *(uint64_t*)op = *(uint64_t*)match;
+                op += 8;
+                match += 8;
+                match_len -= 8;
+            }
+        }
+
+        while(match_len--)
+            *op++ = *match++;
+
+    }
+    return static_cast<size_t>(op - output);
+}

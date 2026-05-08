@@ -39,20 +39,25 @@ ChunkBuffer::~ChunkBuffer(){
 
 
 void ChunkBuffer::submit_chunk(Chunk chunk) {
-    if (chunk.id >= (int)total_chunks) return;
+
+    if (chunk.id >= (int)total_chunks)
+        return;
 
     Slot &slot = slots[chunk.id];
 
+    slot.original_size = chunk.original_size;
     slot.bit_count = chunk.bit_count;
+
     slot.data = std::move(chunk.data);
-    
+
     slot.state.store(SlotState::Filled, std::memory_order_release);
-    
+
     {
         std::lock_guard<std::mutex> lock(sleep_mtx);
         sleep_cv.notify_one();
     }
 }
+
 
 void ChunkBuffer::writer_loop() {
     uint32_t next = 0;
@@ -81,6 +86,7 @@ void ChunkBuffer::writer_loop() {
         }
 
         if (write_headers) {
+            write_uint32(bw, slot.original_size);
             write_uint32(bw, slot.bit_count);
         }
         

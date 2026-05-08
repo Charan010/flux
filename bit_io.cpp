@@ -73,28 +73,6 @@ void BitWriter::write_bytes(const std::vector<uint8_t>& data) {
 
 BitReader::BitReader(const uint8_t *ptr, size_t len): data(ptr), size(len) {}
 
-void BitReader::refill() {
-    while (byte_pos < size && bits_in_buf <= 56) {
-        bitbuf = (bitbuf << 8) | data[byte_pos++];
-        bits_in_buf += 8;
-    }
-}
-
-uint32_t BitReader::peek_bits(int n) {
-    if (n == 0)
-        return 0;
-    refill();
-    
-    if (bits_in_buf < n) 
-        return static_cast<uint32_t>((bitbuf << (n - bits_in_buf)) & ((1ULL << n) - 1));
-    
-    return static_cast<uint32_t>((bitbuf >> (bits_in_buf - n)) & ((1ULL << n) - 1));
-}
-
-
-void BitReader::consume_bits(int n) {
-    bits_in_buf -= n;
-}
 
 int BitReader::read_bit() {
 
@@ -103,7 +81,7 @@ int BitReader::read_bit() {
     if(bits_in_buf == 0)
         return -1;
 
-    int bit = (bitbuf >> (bits_in_buf - 1)) & 1;
+  int bit = static_cast<int>((bitbuf >> (bits_in_buf - 1)) & 1);
     bits_in_buf--;
 
     return bit;
@@ -116,7 +94,7 @@ uint8_t BitReader::read_byte(){
     if(bits_in_buf < 8)
         throw std::runtime_error("unexpected EOF");
 
-    uint8_t val = (bitbuf >>(bits_in_buf - 8) & 0xFF);
+   uint8_t val = static_cast<uint8_t>((bitbuf >> (bits_in_buf - 8)) & 0xFF);
     bits_in_buf -= 8;
 
     return val;

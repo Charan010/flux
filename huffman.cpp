@@ -210,7 +210,8 @@ uint32_t read_uint32_at(const uint8_t *ptr, size_t pos){
     return x;
 }
 
-Node *build_decode_tree(const std::array<HuffmanCode, 256> &table, std::vector<Node> &storage){
+Node *build_decode_tree(const std::array<HuffmanCode, 256> &table, std::vector<Node> &storage)
+{
 
     storage.reserve(512);
     storage.emplace_back();
@@ -274,17 +275,18 @@ Node *build_decode_tree(const std::array<HuffmanCode, 256> &table, std::vector<N
 void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &primary, SecondaryLUT &secondary)
 {
 
-    std::unordered_map<uint32_t, SubtableInfo> subtables;
+    std::array<int32_t, LUT_SIZE> subtable_idx;
+    subtable_idx.fill(-1);
 
-    for (auto &e : primary)
-    {
+    std::vector<SubtableInfo> subtables;
+
+    for (auto &e : primary){
         e.value = 0;
         e.bits = 0;
         e.flags = 0;
     }
 
-    for (uint16_t sym = 0; sym < 256; ++sym)
-    {
+    for (uint16_t sym = 0; sym < 256; ++sym){
 
         const HuffmanCode &code = table[sym];
 
@@ -320,36 +322,33 @@ void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &prim
 
             SubtableInfo info;
 
-            auto it = subtables.find(prefix);
-            if (it == subtables.end())
-            {
+        if(subtable_idx[prefix] == -1){
+            info.offset = secondary.size();
+            info.bits = extra_bits;
 
-                info.offset = secondary.size();
-                info.bits = extra_bits;
-                secondary.resize(secondary.size() + (1u << extra_bits));
+            secondary.resize(secondary.size() + (1u << extra_bits));
 
-                for (size_t i = info.offset; i < secondary.size(); ++i)
-                {
-                    secondary[i].value = 0;
-                    secondary[i].bits = 0;
-                    secondary[i].flags = 0;
-                }
-                subtables[prefix] = info;
+        for(size_t i = info.offset; i < secondary.size(); ++i){
+                secondary[i].value = 0;
+                secondary[i].bits = 0;
+                secondary[i].flags = 0;
+        }
 
-                primary[prefix].value = info.offset;
-                primary[prefix].bits = extra_bits;
-                primary[prefix].flags = ENTRY_SUBTABLE;
-            }
+        subtable_idx[prefix] = subtables.size();
+        subtables.push_back(info);
 
-            else
-            {
-                info = it->second;
-            }
+        primary[prefix].value = info.offset;
+        primary[prefix].bits = extra_bits;
+        primary[prefix].flags = ENTRY_SUBTABLE;
+    }
+    else{
+    info = subtables[subtable_idx[prefix]];
+    }
 
-            const uint32_t suffix = code.bits & ((1u << extra_bits) - 1);
-            const uint32_t shift = info.bits - extra_bits;
-            const uint32_t start = suffix << shift;
-            const uint32_t count = 1u << shift;
+        const uint32_t suffix = code.bits & ((1u << extra_bits) - 1);
+        const uint32_t shift = info.bits - extra_bits;
+        const uint32_t start = suffix << shift;
+        const uint32_t count = 1u << shift;
 
             for (uint32_t i = 0; i < count; ++i)
             {

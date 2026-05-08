@@ -26,8 +26,9 @@ void Coordinator::encode_chunk(const uint8_t* data, size_t len, int id, const st
         encoded.reserve(len * 2); 
     }
 
-    size_t pos = 0;
     encoded.clear();
+    encoded.resize(len + 64);
+    size_t pos = 0;
 
     uint64_t acc = 0;
     int bits_in_acc = 0;
@@ -53,9 +54,12 @@ void Coordinator::encode_chunk(const uint8_t* data, size_t len, int id, const st
         encoded[pos++] = static_cast<uint8_t>(acc << (8 - bits_in_acc));
     }
 
-    std::vector<uint8_t> out(encoded.begin(), encoded.begin() + pos);
+    encoded.resize(pos);
+    std::vector<uint8_t> out;
+    out.swap(encoded);
     
-    buffer->submit_chunk(Chunk(id, bit_count, std::move(out)));
+    buffer->submit_chunk(Chunk(id, static_cast<uint32_t>(len), bit_count, std::move(out)));
+
 }
 
 
@@ -197,12 +201,13 @@ void Coordinator::compress(const std::string &input_file, const std::string &out
 */
 
 
-void Coordinator::decode_chunk(const uint8_t* encoded, size_t encoded_size, uint32_t bit_count,
+void Coordinator::decode_chunk(const uint8_t* encoded, size_t encoded_size, uint32_t bit_count, uint32_t expected_chunk_size,
     const DecodeLUT& primary, const SecondaryLUT& secondary, ChunkBuffer* buffer, int id) {
 
 
     thread_local std::vector<uint8_t> decoded;
-    decoded.clear();
+    decoded.resize(expected_chunk_size);
+    uint8_t* out = decoded.data();
 
     uint32_t bits_read = 0;
     BitReader reader(encoded, encoded_size);
@@ -213,13 +218,12 @@ void Coordinator::decode_chunk(const uint8_t* encoded, size_t encoded_size, uint
 
         const auto &entry = primary[idx];
 
-        if(entry.flags & ENTRY_SYMBOL){
+        if(__builtin_expect(entry.flags & ENTRY_SYMBOL, 1)){
 
             reader.consume_bits(entry.bits);
             bits_read += entry.bits;
 
-            decoded.push_back(static_cast<uint8_t>(entry.value));
-
+           *out++ = static_cast<uint8_t>(entry.value);
         }
 
         else {
@@ -227,6 +231,8 @@ void Coordinator::decode_chunk(const uint8_t* encoded, size_t encoded_size, uint
             reader.consume_bits(LUT_BITS);
 
             const uint32_t extra = reader.peek_bits(entry.bits);
+            __builtin_prefetch(&secondary[entry.value + extra], 0, 1);
+
             const auto &sub = secondary[entry.value + extra];
 
             assert(entry.value + extra < secondary.size());
@@ -237,13 +243,16 @@ void Coordinator::decode_chunk(const uint8_t* encoded, size_t encoded_size, uint
 
 
             bits_read += sub.bits;
-            decoded.push_back(static_cast<uint8_t>(sub.value));
-
+           *out++ = static_cast<uint8_t>(sub.value);
         }
     }
 
-    std::vector<uint8_t> out = decoded;
-    buffer->submit_chunk(Chunk(id, static_cast<uint32_t>(out.size()), std::move(out)));
+    decoded.resize(out - decoded.data());
+
+    std::vector<uint8_t> final_out;
+    final_out.swap(decoded);
+
+    buffer->submit_chunk(Chunk(id, static_cast<uint32_t>(final_out.size()), 0, std::move(final_out)));
 
 }
 
@@ -304,14 +313,21 @@ void Coordinator::decompress(const std::string& input, const std::string& output
        }
 
 
-         uint32_t bit_count = 
-        (static_cast<uint32_t>(file_ptr[pos])     << 24) |
-        (static_cast<uint32_t>(file_ptr[pos + 1]) << 16) |
-        (static_cast<uint32_t>(file_ptr[pos + 2]) << 8)  |
-         static_cast<uint32_t>(file_ptr[pos + 3]); 
+       uint32_t original_size =
+            (static_cast<uint32_t>(file_ptr[pos]) << 24) |
+            (static_cast<uint32_t>(file_ptr[pos + 1]) << 16) |
+            (static_cast<uint32_t>(file_ptr[pos + 2]) << 8) |
+            static_cast<uint32_t>(file_ptr[pos + 3]);
 
-        
-         pos += 4;
+        pos += 4;
+
+        uint32_t bit_count =
+            (static_cast<uint32_t>(file_ptr[pos]) << 24) |
+            (static_cast<uint32_t>(file_ptr[pos + 1]) << 16) |
+            (static_cast<uint32_t>(file_ptr[pos + 2]) << 8) |
+            static_cast<uint32_t>(file_ptr[pos + 3]);
+
+        pos += 4;
 
         uint32_t byte_size = (bit_count + 7) / 8;
 
@@ -323,8 +339,8 @@ void Coordinator::decompress(const std::string& input, const std::string& output
         pos += byte_size;
 
 
-        pool.submit([this, chunk_ptr, byte_size, bit_count, &buffer, &lut, &secondary, id](){
-            decode_chunk(chunk_ptr, byte_size, bit_count,lut,secondary,&buffer, id);
+        pool.submit([this, chunk_ptr, byte_size, bit_count, &buffer, &lut, &secondary, id, original_size](){
+            decode_chunk(chunk_ptr, byte_size, bit_count, original_size, lut, secondary, &buffer, id);
         });
 
     }

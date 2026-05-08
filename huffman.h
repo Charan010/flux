@@ -54,7 +54,7 @@ struct SubtableInfo{
 constexpr uint8_t ENTRY_SYMBOL   = 1;
 constexpr uint8_t ENTRY_SUBTABLE = 2;
 
-constexpr int LUT_BITS = 10;
+constexpr int LUT_BITS = 11;
 constexpr int LUT_SIZE = 1 << LUT_BITS;
 
 

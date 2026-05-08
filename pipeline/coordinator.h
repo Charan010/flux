@@ -27,7 +27,7 @@ public:
 
     void decompress(const std::string& input_file, const std::string& output_file);
 
-   void decode_chunk(const uint8_t* encoded, size_t encoded_size, uint32_t bit_count,
+   void decode_chunk(const uint8_t* encoded, size_t encoded_size, uint32_t bit_count, uint32_t expected_chunk_size,
     const DecodeLUT& primary, const SecondaryLUT& secondary, ChunkBuffer* buffer, int id);
 
 };
