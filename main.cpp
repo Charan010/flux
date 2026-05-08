@@ -27,10 +27,26 @@ void print_header() {
               << "---------------------------------------------\n\n";
 }
 
-int main() {
+int main(int argc, char* argv[]) {
 
-    Coordinator coordinator(6, 1 << 22);
+    
+    int threads = std::thread::hardware_concurrency(); 
+    int chunk_mb = 1;
+
+    if(argc > 3){
+        threads = std::stoi(argv[1]);
+        chunk_mb = std::stoi(argv[2]);
+    }
+
+    if (threads <= 0 || chunk_mb <= 0) {
+        std::cerr << "threads and chunk_size_mb must be > 0\n";
+        return 1;
+    }
+
+    size_t chunk_size = static_cast<size_t>(chunk_mb) << 20;
     print_header();
+
+    Coordinator coordinator(threads, (size_t)chunk_size);
 
     while (true) {
         std::cout << BLUE << BOLD << "flux> " << RESET;

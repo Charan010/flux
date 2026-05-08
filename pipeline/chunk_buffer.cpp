@@ -1,10 +1,16 @@
 #include "chunk_buffer.h"
+#include "huffman.h"
 
-ChunkBuffer::ChunkBuffer(BitWriter& bw, uint32_t total_chunks)
-    : bw(bw), total_chunks(total_chunks) , slots(new Slot[total_chunks]){
+ChunkBuffer::ChunkBuffer(BitWriter& bw, uint32_t total_chunks, ProgressBar* progress, bool write_headers):
+    bw(bw),
+    total_chunks(total_chunks),
+    progress(progress),
+    write_headers(write_headers),
+    slots(new Slot[total_chunks]) {
 
     writer_thread = std::thread(&ChunkBuffer::writer_loop, this);
 }
+
 
 ChunkBuffer::~ChunkBuffer(){
     finish();
@@ -32,75 +38,64 @@ ChunkBuffer::~ChunkBuffer(){
 */
 
 
-void ChunkBuffer::submit_chunk(Chunk chunk){
-
-    assert(chunk.id < (int)total_chunks);
+void ChunkBuffer::submit_chunk(Chunk chunk) {
+    if (chunk.id >= (int)total_chunks) return;
 
     Slot &slot = slots[chunk.id];
 
-
-    /* std::memory_order_release offers happens before gurantee and data and state would not be
-        available to other cores until these instructions are executed. Cpu is free to do out of order
-        optimization but it gives us the gurantee that this state will be flipped first.
-    */
-
+    slot.bit_count = chunk.bit_count;
     slot.data = std::move(chunk.data);
+    
     slot.state.store(SlotState::Filled, std::memory_order_release);
-    sleep_cv.notify_one();
-
+    
+    {
+        std::lock_guard<std::mutex> lock(sleep_mtx);
+        sleep_cv.notify_one();
+    }
 }
 
-
-void ChunkBuffer::writer_loop(){
-
+void ChunkBuffer::writer_loop() {
     uint32_t next = 0;
 
-    while(next  < total_chunks){
+    while (next < total_chunks) {
         Slot &slot = slots[next];
 
         int spin = SPIN_COUNT;
-
-        /* instead of multiple threads hammering on one lock, we can just afford to do spin lock waiting because of short
-            time required for the chunks to be submitted, so, the maximum number of spins that we can afford is SPIN_COUNT = 1024
-        */
-        while(slot.state.load(std::memory_order_acquire) != SlotState::Filled && spin-- > 0){
-
-
-            /*
-                hints CPU that these instructions are busy waiting and coooperates with other threads and allows other threads
-                for execution because its just burning CPU cycles without much progress. 
-            
-                also reduces pipeline power need.
-            */
-           
+        while (slot.state.load(std::memory_order_acquire) != SlotState::Filled && spin-- > 0) {
             #if defined(__x86_64__) || defined(_M_X64)
                 __asm__ volatile("pause" ::: "memory");  
             #elif defined(__aarch64__)
                 __asm__ volatile("yield" ::: "memory");
-            
             #endif
         }
 
-        if(slot.state.load(std::memory_order_acquire) != SlotState::Filled){
-
+        if (slot.state.load(std::memory_order_acquire) != SlotState::Filled) {
             std::unique_lock<std::mutex> lock(sleep_mtx);
-
             sleep_cv.wait(lock, [&] {
                 return slot.state.load(std::memory_order_acquire) == SlotState::Filled || done.load(std::memory_order_relaxed);
             });
-
         }
 
-        if(slot.state.load(std::memory_order_acquire) != SlotState::Filled)
-            break;
+        if (slot.state.load(std::memory_order_acquire) != SlotState::Filled) {
+            break; 
+        }
 
-        bw.write_bytes(slot.data);
+        if (write_headers) {
+            write_uint32(bw, slot.bit_count);
+        }
+        
+        bw.write_bytes(slot.data); 
 
-        {std::vector<uint8_t> tmp; std::swap(slot.data, tmp); }
+        if (progress) {
+            progress->update(1); 
+        }
+
+        slot.data.clear();
+        slot.data.shrink_to_fit();
 
         slot.state.store(SlotState::Consumed, std::memory_order_release);
         ++next;
-        }
+    }
 }
 
 void ChunkBuffer::finish() {

@@ -11,34 +11,36 @@
         }
 
 
-        void BitWriter::write_bits(uint64_t bits, int count){
+void BitWriter::write_bits(uint64_t bits, int count) {
+    if (count == 0)
+        return;
 
-            if(count == 0)
-                return;
+    if (count < 64)
+        bits &= (1ULL << count) - 1;
 
-            assert(count > 0 && count <= 64);
-            assert(bits_in_acc + count <= 64);
+    if (bits_in_acc + count > 64) {
+        int room = 64 - bits_in_acc;
+        write_bits(bits >> (count - room), room); 
+        write_bits(bits, count - room);           
+        return;
+    }
 
-            if(count < 64)
-                bits &= (1ULL << count)-1;
+    acc = (acc << count) | bits;
+    bits_in_acc += count;
 
-            acc = (acc << count) | bits;
-            bits_in_acc += count;
+    uint8_t tmp[8];
+    int t = 0;
+    while (bits_in_acc >= 8) {
+        bits_in_acc -= 8;
+        tmp[t++] = static_cast<uint8_t>((acc >> bits_in_acc) & 0xFF);
+    }
 
-             uint8_t tmp[8];
-             int t = 0;
-
-            while (bits_in_acc >= 8) {
-                bits_in_acc -= 8;
-                tmp[t++] = (acc >> bits_in_acc) & 0xFF;
-            }
-
-            if (t > 0)
-                out.write(reinterpret_cast<char*>(tmp), t);
-
-            acc &= (bits_in_acc > 0) ? (1ULL << bits_in_acc) - 1 : 0;
-
-        }
+    if (t > 0)
+        out.write(reinterpret_cast<char*>(tmp), t);
+    
+    if (bits_in_acc > 0) acc &= (1ULL << bits_in_acc) - 1;
+    else acc = 0;
+}
     
         void BitWriter::write_bit(int b){
             assert(b == 0 || b == 1);
@@ -46,109 +48,94 @@
 
         }
         
-        void BitWriter::write_byte(uint8_t b) {
-            write_bits(b, 8);
-        }
+void BitWriter::write_byte(uint8_t b) {
+    write_bits(b, 8);
+}
 
-        void BitWriter::flush(){
-            if(bits_in_acc > 0){
 
-                assert(bits_in_acc < 8);
 
-                uint8_t byte = (acc << (8 - bits_in_acc)) & 0xFF;
-                out.put(static_cast<char>(byte));
+void BitWriter::flush() {
+    if (bits_in_acc > 0) {
+        uint8_t byte = static_cast<uint8_t>((acc << (8 - bits_in_acc)) & 0xFF);
+        out.put(static_cast<char>(byte));
+    }
 
-            }
-            acc = 0;
-            bits_in_acc = 0;
+    acc = 0;
+    bits_in_acc = 0;
+    out.flush();
+}
 
-        }
+void BitWriter::write_bytes(const std::vector<uint8_t>& data) {
+    assert(bits_in_acc == 0 && "write_bytes called with unflused bits");
+    out.write(reinterpret_cast<const char*>(data.data()), data.size());
+}
+
+
+BitReader::BitReader(const uint8_t *ptr, size_t len): data(ptr), size(len) {}
+
+void BitReader::refill() {
+    while (byte_pos < size && bits_in_buf <= 56) {
+        bitbuf = (bitbuf << 8) | data[byte_pos++];
+        bits_in_buf += 8;
+    }
+}
+
+uint32_t BitReader::peek_bits(int n) {
+    if (n == 0)
+        return 0;
+    refill();
+    
+    if (bits_in_buf < n) 
+        return static_cast<uint32_t>((bitbuf << (n - bits_in_buf)) & ((1ULL << n) - 1));
+    
+    return static_cast<uint32_t>((bitbuf >> (bits_in_buf - n)) & ((1ULL << n) - 1));
+}
+
+
+void BitReader::consume_bits(int n) {
+    bits_in_buf -= n;
+}
+
+int BitReader::read_bit() {
+
+    refill();
+
+    if(bits_in_buf == 0)
+        return -1;
+
+    int bit = (bitbuf >> (bits_in_buf - 1)) & 1;
+    bits_in_buf--;
+
+    return bit;
+}
+
+uint8_t BitReader::read_byte(){
+
+    refill();
+
+    if(bits_in_buf < 8)
+        throw std::runtime_error("unexpected EOF");
+
+    uint8_t val = (bitbuf >>(bits_in_buf - 8) & 0xFF);
+    bits_in_buf -= 8;
+
+    return val;
+}
+
+
+void BitReader::align_to_byte() {
+    bits_in_buf = 0;
+    bitbuf = 0;
+}
+
+void BitReader::read_bytes(uint8_t* dst,size_t n){
+    align_to_byte();
+
+    if(byte_pos + n > size)
+        throw std::runtime_error("unexpected EOF");
+    memcpy(dst, data + byte_pos, n);
+    byte_pos += n;
+
+}
+
         
-
-
-        void BitWriter::write_bytes(const std::vector<uint8_t>& data) {
-
-            assert(bits_in_acc == 0 && "write_bytes called with unflused bits");
-            out.write(reinterpret_cast<const char*>(data.data()), data.size());
-        }
-
-
-        BitReader::BitReader(const std::string& file)
-            : in(file, std::ios::binary) {
-            in.rdbuf()->pubsetbuf(io_buf.get(), sizeof(io_buf));  
-        }
-
-        void BitReader::refill(int needed){
-            assert(needed >= 0 && needed <= 64); 
-
-            while(bits_in_buf < needed && bits_in_buf <= 56){
-                char c;
-                if (!in.get(c)) 
-                    break;
-                
-                bitbuf = (bitbuf << 8) | static_cast<uint8_t>(c);
-                bits_in_buf += 8;
-            }
-        }
-
-
-        uint32_t BitReader::peek_bit(int n){
-
-            assert(n > 0 && n <= 32);
-            refill(n);
-
-            if(bits_in_buf < n)
-                throw std::runtime_error("unexpected EOF");
-
-            return (bitbuf >> (bits_in_buf - n)) & ((1u << n) - 1);
-
-        }
-
-        void BitReader::consume_bits(int n){
-            assert(n >= 0 && n <= bits_in_buf);
-            bits_in_buf -= n;
-        }
-
-        int BitReader::read_bit(){
-
-            refill(1);
-
-            if(bits_in_buf == 0)
-                return -1;
-
-            int bit = (bitbuf >> (bits_in_buf - 1)) & 1;
-            bits_in_buf--;
-
-            return bit;
-        }
-
-
-        uint8_t BitReader::read_byte(){
-            refill(8);
-
-            if(bits_in_buf < 8)
-                throw std::runtime_error("unexpected EOF");
-
-            uint8_t val = (bitbuf >> (bits_in_buf - 8)) & 0xFF;
-            bits_in_buf -= 8;
-
-            return val;
-        }
-
-
-        void BitReader::align_to_byte(){
-            bits_in_buf -= bits_in_buf % 8;
-        }
-
-        void BitReader::read_bytes(uint8_t* dst, size_t n){
-
-            align_to_byte();
-            in.read(reinterpret_cast<char*>(dst), n);
-
-            if (in.gcount() != static_cast<std::streamsize>(n))
-                throw std::runtime_error("unexpected EOF in read_bytes");
-        
-        }
-
-
-

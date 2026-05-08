@@ -8,12 +8,15 @@
 #include <memory>
 #include <cstdint>
 #include <cassert>
+
 #include "bit_io.h"
 #include "chunk.h"
+#include "progress_bar.h"
 
 class ChunkBuffer {
 public:
-    ChunkBuffer(BitWriter& bw, uint32_t total_chunks);
+
+    ChunkBuffer(BitWriter& bw, uint32_t total_chunks, ProgressBar* progress = nullptr, bool write_headers = true);
     ~ChunkBuffer();
 
     void submit_chunk(Chunk chunk);
@@ -27,27 +30,41 @@ private:
     };
 
     struct alignas(64) Slot {
+
+        // separate cacheline ownership
         std::atomic<SlotState> state{SlotState::Empty};
-        std::vector<uint8_t>   data;
+
+        std::vector<uint8_t> data;
+
+        uint32_t bit_count = 0;
 
         Slot() = default;
+
         Slot(const Slot&) = delete;
         Slot& operator=(const Slot&) = delete;
+
         Slot(Slot&&) = delete;
         Slot& operator=(Slot&&) = delete;
     };
 
-    BitWriter&               bw;
-    uint32_t                 total_chunks;
+private:
+    BitWriter& bw;
 
-    std::unique_ptr<Slot[]>  slots;
+    uint32_t total_chunks;
 
-    std::mutex               sleep_mtx;
-    std::condition_variable  sleep_cv;
-    std::atomic<bool>        done{false};
+    std::unique_ptr<Slot[]> slots;
 
-    std::thread              writer_thread;
+    ProgressBar* progress;
 
+    std::mutex sleep_mtx;
+    std::condition_variable sleep_cv;
+
+    std::atomic<bool> done{false};
+
+    std::thread writer_thread;
+    bool write_headers;
+
+private:
     void writer_loop();
 
     static constexpr int SPIN_COUNT = 1024;

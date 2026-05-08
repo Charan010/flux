@@ -23,22 +23,23 @@ struct BitWriter {
 
 
 struct BitReader {
-    static constexpr size_t BUF_SIZE = 4 * 1024 * 1024;  
-    std::unique_ptr<char[]> io_buf;
 
-    std::ifstream in;
+    const uint8_t* data;
+    size_t size;
+
+    size_t byte_pos = 0;
+
     uint64_t bitbuf = 0;
     int bits_in_buf = 0;
 
-    BitReader(const std::string& file);
-    void refill(int needed);
-    uint32_t peek_bit(int n);
+    BitReader(const uint8_t* ptr, size_t len);
+
+    void refill();
+    uint32_t peek_bits(int n);
     void consume_bits(int n);
     int read_bit();
     uint8_t read_byte();
     void align_to_byte();
     void read_bytes(uint8_t* dst, size_t n);
-
-    
 
 };

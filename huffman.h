@@ -33,27 +33,37 @@ struct FlatNode{
 
 
 struct HuffmanCode {
+    uint64_t bits;
     uint8_t len;
-    uint32_t bits;
 };
 
 struct DecodeEntry{
-    uint8_t symbol;
+
+    uint16_t value;
     uint8_t bits;
-    uint16_t next_index;
-    bool is_leaf;
-    bool has_next;
-    
+    uint8_t flags;
+};
+ 
+struct SubtableInfo{
+
+    uint32_t offset;
+    uint8_t bits;
 };
 
 
-constexpr int LUT_BITS = 15;
+constexpr uint8_t ENTRY_SYMBOL   = 1;
+constexpr uint8_t ENTRY_SUBTABLE = 2;
+
+constexpr int LUT_BITS = 10;
 constexpr int LUT_SIZE = 1 << LUT_BITS;
 
 
 using FrequencyTable = std::array<uint64_t,256>;
 using DecodeLUT = std::array<DecodeEntry, LUT_SIZE>;
 using FlatTree = std::vector<FlatNode>;
+using SecondaryLUT = std::vector<DecodeEntry>;
+
+
 
 
 struct Compare {
@@ -78,4 +88,4 @@ void generate_canonical_table(const std::array<uint8_t , 256>&lengths, std::arra
 
 Node* build_decode_tree(const std::array<HuffmanCode, 256>& table, std::vector<Node>& storage);
 
-void build_decode_lut(const std::array<HuffmanCode,256>& table, const FlatTree& flat, DecodeLUT& lut);
+void build_decode_lut(const std::array<HuffmanCode,256>& table, DecodeLUT& primary, SecondaryLUT& secondary);
