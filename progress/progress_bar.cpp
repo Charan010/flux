@@ -3,11 +3,10 @@
 #include <iomanip>
 #include <iostream>
 
-ProgressBar::ProgressBar(size_t chunks,size_t bytes):
-     total_chunks(chunks), total_bytes(bytes), start_time(std::chrono::steady_clock::now())
-{}
+ProgressBar::ProgressBar(size_t chunks, size_t bytes)
+    : total_chunks(chunks), total_bytes(bytes), start_time(std::chrono::steady_clock::now()) {}
 
-void ProgressBar::update(size_t bytes_processed){
+void ProgressBar::update(size_t bytes_processed) {
     completed_chunks++;
     processed_bytes += bytes_processed;
 }
@@ -36,52 +35,46 @@ RenderStats ProgressBar::compute_stats() const {
 
     double eta = throughput > 0 ? (total_mb - mb_processed) / throughput : 0;
 
-    return {
-        .progress = progress,
-        .throughput = throughput,
-        .eta = eta,
-        .completed = completed,
-        .total = total_chunks,
-        .bar_pos =
-            static_cast<int>(
-                progress * 40)
-    };
+    return {.progress = progress,
+            .throughput = throughput,
+            .eta = eta,
+            .completed = completed,
+            .total = total_chunks,
+            .bar_pos = static_cast<int>(progress * 40)};
 }
 
-void ProgressBar::render_bar(int width,int pos) const{
-    
+void ProgressBar::render_bar(int width, int pos) const {
+
     std::cout << "\033[1m\033[34m[";
 
-    for(int i = 0; i < width; ++i) {
+    for (int i = 0; i < width; ++i) {
 
-        if(i < pos)
+        if (i < pos)
             std::cout << "\033[32m█";
 
         else
             std::cout << "\033[90m░";
     }
 
-    std::cout
-        << "\033[34m]\033[0m ";
+    std::cout << "\033[34m]\033[0m ";
 }
 
-void ProgressBar::render_percentage(float progress) const{
-    std::cout << "\033[1m" << std::setw(3) << static_cast<int>(progress * 100.0f)<< "%\033[0m ";
+void ProgressBar::render_percentage(float progress) const {
+    std::cout << "\033[1m" << std::setw(3) << static_cast<int>(progress * 100.0f) << "%\033[0m ";
 }
 
-
-void ProgressBar::render_throughput(double throughput) const{
-    std::cout << "\033[36m| " << std::fixed << std::setprecision(1) << throughput << " MB/s \033[0m";
+void ProgressBar::render_throughput(double throughput) const {
+    std::cout << "\033[36m| " << std::fixed << std::setprecision(1) << throughput
+              << " MB/s \033[0m";
 }
 
+void ProgressBar::render_eta(double eta) const {
 
-void ProgressBar::render_eta(double eta) const{
-    
     std::cout << "\033[35m| ETA " << std::fixed << std::setprecision(1) << eta << "s \033[0m";
 }
 
-void ProgressBar::render_chunks(size_t completed, size_t total) const{
-    
+void ProgressBar::render_chunks(size_t completed, size_t total) const {
+
     std::cout << "\033[33m(" << completed << "/" << total << ")\033[0m";
 }
 
@@ -103,6 +96,4 @@ void ProgressBar::render() {
 
     render_chunks(stats.completed, stats.total);
     std::cout << std::flush;
-
-    
 }

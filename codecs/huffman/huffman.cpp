@@ -10,63 +10,40 @@ Node::Node(uint8_t c, uint64_t f) : ch(c), freq(f), left(nullptr), right(nullptr
 
 Node::Node() : ch(0), freq(0), left(nullptr), right(nullptr) {}
 
-bool Compare::operator()(Node *a, Node *b)
-{
+
+
+bool Compare::operator()(Node *a, Node *b){
     return a->freq > b->freq;
-}
-
-uint16_t flatten_tree(Node *root, FlatTree &flat)
-{
-
-    uint16_t idx = static_cast<uint16_t>(flat.size());
-    flat.push_back({0, 0, 0, false});
-
-    bool is_leaf = (!root->left && !root->right);
-
-    flat[idx].is_leaf = is_leaf;
-
-    if (is_leaf)
-    {
-        flat[idx].symbol = root->ch;
-        flat[idx].left = 0;
-        flat[idx].right = 0;
-        return idx;
-    }
-
-    flat[idx].left = flatten_tree(root->left, flat);
-
-    flat[idx].right = flatten_tree(root->right, flat);
-    return idx;
 }
 
 /*
     building huffman tree by using priority queue where most frequent characters are
     assigned shorter codes.
 */
-Node *build_huffman_tree(const FrequencyTable &freq, std::vector<Node> &storage)
-{
+Node *build_huffman_tree(const FrequencyTable &freq, std::vector<Node> &storage){
 
     std::priority_queue<Node *, std::vector<Node *>, Compare> pq;
     int sym_count = 0;
-    for (int i = 0; i < 256; ++i)
-    {
+    for (int i = 0; i < 256; ++i){
         if (freq[i] > 0)
             sym_count++;
     }
 
     storage.reserve(512);
 
-    for (int i = 0; i < 256; ++i)
-    {
-        if (freq[i] > 0)
-        {
+    for (int i = 0; i < 256; ++i){
+        if (freq[i] > 0){
+
             storage.emplace_back((uint8_t)i, freq[i]);
             pq.push(&storage.back());
         }
     }
 
-    while (pq.size() > 1)
-    {
+
+    if (pq.empty())
+        return nullptr;
+
+    while (pq.size() > 1){
 
         Node *a = pq.top();
         pq.pop();
@@ -78,19 +55,21 @@ Node *build_huffman_tree(const FrequencyTable &freq, std::vector<Node> &storage)
         pq.push(&storage.back());
     }
 
+    if (pq.empty())
+        return nullptr;
+
     return pq.top();
+    
 }
 
-void compute_lengths(Node *root, uint8_t depth, std::array<uint8_t, 256> &lengths)
-{
+void compute_lengths(Node *root, uint8_t depth, std::array<uint8_t, 256> &lengths){
 
     if (!root)
         return;
 
     const bool is_leaf = (!root->left && !root->right);
 
-    if (is_leaf)
-    {
+    if (is_leaf){
         lengths[root->ch] = (depth == 0) ? 1 : depth;
         return;
     }
@@ -132,21 +111,19 @@ void compute_lengths(Node *root, uint8_t depth, std::array<uint8_t, 256> &length
         where bl_count[bits] basically represents how many characters have lengths "bits".
 
 */
-void generate_canonical_table(const std::array<uint8_t, 256> &lengths, std::array<HuffmanCode, 256> &table)
-{
+
+void generate_canonical_table(const std::array<uint8_t, 256> &lengths, std::array<HuffmanCode, 256> &table){
 
     const int MAX_BITS = 32;
 
     std::array<uint32_t, MAX_BITS + 1> bl_count{};
 
-    for (uint8_t len : lengths)
-    {
-        if (len > 0)
-        {
-            if (len > MAX_BITS)
-            {
-                throw std::runtime_error("Huffman tree depth exceeds 32 bits. Use a length-limited algorithm.");
+    for (uint8_t len : lengths){
+        if (len > 0){
+            if (len > MAX_BITS){
+                throw std::runtime_error("Huffman trece depth exceeds 32 bits. Use a length-limited algorithm.");
             }
+
             bl_count[len]++;
         }
     }
@@ -155,17 +132,14 @@ void generate_canonical_table(const std::array<uint8_t, 256> &lengths, std::arra
 
     uint64_t code = 0;
 
-    for (int bits = 1; bits <= MAX_BITS; ++bits)
-    {
+    for (int bits = 1; bits <= MAX_BITS; ++bits){
         code = (code + bl_count[bits - 1]) << 1;
         next_code[bits] = code;
     }
 
-    for (int sym = 0; sym < 256; ++sym)
-    {
+    for (int sym = 0; sym < 256; ++sym){
         uint8_t len = lengths[sym];
-        if (len != 0)
-        {
+        if (len != 0){
             table[sym].bits = next_code[len];
             table[sym].len = len;
             next_code[len]++;
@@ -173,28 +147,24 @@ void generate_canonical_table(const std::array<uint8_t, 256> &lengths, std::arra
     }
 }
 
-void write_lengths(const std::array<uint8_t, 256> &lengths, BitWriter &bw)
-{
+void write_lengths(const std::array<uint8_t, 256> &lengths, BitWriter &bw){
     for (int i = 0; i < 256; i++)
         bw.write_byte(lengths[i]);
 }
 
-void read_lengths(std::array<uint8_t, 256> &lengths, BitReader &br)
-{
+void read_lengths(std::array<uint8_t, 256> &lengths, BitReader &br){
     for (int i = 0; i < 256; i++)
         lengths[i] = br.read_byte();
 }
 
-uint32_t read_uint32(BitReader &br)
-{
+uint32_t read_uint32(BitReader &br){
     uint32_t x = 0;
     for (int i = 0; i < 4; i++)
         x = (x << 8) | br.read_byte();
     return x;
 }
 
-void write_uint32(BitWriter &bw, uint32_t x)
-{
+void write_uint32(BitWriter &bw, uint32_t x){
     bw.write_byte((x >> 24) & 0xFF);
     bw.write_byte((x >> 16) & 0xFF);
     bw.write_byte((x >> 8) & 0xFF);
@@ -208,53 +178,6 @@ uint32_t read_uint32_at(const uint8_t *ptr, size_t pos){
     x |= (static_cast<uint32_t>(ptr[pos + 2]) << 8);
     x |= (static_cast<uint32_t>(ptr[pos + 3]));
     return x;
-}
-
-Node *build_decode_tree(const std::array<HuffmanCode, 256> &table, std::vector<Node> &storage)
-{
-
-    storage.reserve(512);
-    storage.emplace_back();
-
-    Node *root = &storage.back();
-
-    for (int sym = 0; sym < 256; sym++)
-    {
-
-        const auto &code = table[sym];
-
-        if (code.len == 0)
-            continue;
-
-        Node *curr = root;
-
-        for (int i = code.len - 1; i >= 0; i--)
-        {
-            int bit = (code.bits >> i) & 1;
-            if (bit == 0)
-            {
-                if (!curr->left)
-                {
-                    storage.emplace_back();
-                    curr->left = &storage.back();
-                }
-                curr = curr->left;
-            }
-            else
-            {
-                if (!curr->right)
-                {
-                    storage.emplace_back();
-                    curr->right = &storage.back();
-                }
-                curr = curr->right;
-            }
-        }
-
-        curr->ch = static_cast<uint8_t>(sym);
-    }
-
-    return root;
 }
 
 /*
@@ -272,8 +195,7 @@ Node *build_decode_tree(const std::array<HuffmanCode, 256> &table, std::vector<N
     This reduces the bottleneck of reading bit by bit.
 
 */
-void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &primary, SecondaryLUT &secondary)
-{
+void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &primary, SecondaryLUT &secondary){
 
     std::array<int32_t, LUT_SIZE> subtable_idx;
     subtable_idx.fill(-1);
@@ -295,8 +217,7 @@ void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &prim
         if (len == 0)
             continue;
 
-        if (len <= LUT_BITS)
-        {
+        if (len <= LUT_BITS){
 
             const uint32_t shift = LUT_BITS - len;
             const uint32_t start = code.bits << shift;
@@ -312,8 +233,7 @@ void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &prim
             }
         }
 
-        else
-        {
+        else{
 
             // fetching the first LUT_BITS like a prefix to secondary LUT table.
             const uint32_t prefix = (code.bits >> (len - LUT_BITS)) & ((1u << LUT_BITS) - 1);
@@ -340,18 +260,16 @@ void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &prim
         primary[prefix].value = info.offset;
         primary[prefix].bits = extra_bits;
         primary[prefix].flags = ENTRY_SUBTABLE;
+
     }
-    else{
-    info = subtables[subtable_idx[prefix]];
-    }
+    else{ info = subtables[subtable_idx[prefix]]; }
 
         const uint32_t suffix = code.bits & ((1u << extra_bits) - 1);
         const uint32_t shift = info.bits - extra_bits;
         const uint32_t start = suffix << shift;
         const uint32_t count = 1u << shift;
 
-            for (uint32_t i = 0; i < count; ++i)
-            {
+            for (uint32_t i = 0; i < count; ++i){
 
                 assert(info.offset + start + i < secondary.size());
                 auto &entry = secondary[info.offset + start + i];
@@ -362,4 +280,35 @@ void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &prim
             }
         }
     }
+}
+
+
+FrequencyTable compute_frequency(const uint8_t *file_ptr, size_t file_size){
+    
+    FrequencyTable table{};
+    table.fill(0);
+
+    /* This helps CPU to apply loop unrolling and as there is no dependency chain in the results.
+        CPU can parallelize the instructions.
+
+    */
+
+    FrequencyTable freq0{}, freq1{}, freq2{}, freq3{};
+
+    size_t i = 0;
+    
+    for(; i + 4 <= file_size; i += 4){
+            freq0[file_ptr[i]]++;
+            freq1[file_ptr[i+1]]++;
+            freq2[file_ptr[i+2]]++;
+            freq3[file_ptr[i+3]]++;
+    }
+
+    for (; i < file_size; ++i) 
+        freq0[file_ptr[i]]++;
+
+    for (int j = 0; j < 256; ++j)
+        table[j] = freq0[j] + freq1[j] + freq2[j] + freq3[j];
+
+    return table;
 }

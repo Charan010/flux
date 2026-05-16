@@ -1,29 +1,29 @@
 #pragma once
 
-#include <vector>
-#include <thread>
-#include <queue>
-#include <mutex>
-#include <condition_variable>
 #include <atomic>
-#include <functional>  
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <queue>
+#include <thread>
+#include <vector>
 
 class Threadpool {
 
-public:
+  public:
     explicit Threadpool(size_t num_threads);
 
-    void submit(std::function<void()> job); 
+    void submit(std::function<void()> job);
     void shutdown();
     void wait();
 
     ~Threadpool();
 
-private:
+  private:
     void worker_loop();
 
     std::vector<std::thread> workers;
-    std::queue<std::function<void()>> jobs;  
+    std::queue<std::function<void()>> jobs;
 
     std::mutex mtx;
     std::condition_variable cv;

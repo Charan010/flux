@@ -9,9 +9,7 @@ Threadpool::Threadpool(size_t num_threads) {
         workers.emplace_back(&Threadpool::worker_loop, this);
 }
 
-Threadpool::~Threadpool() {
-    shutdown();
-}
+Threadpool::~Threadpool() { shutdown(); }
 
 void Threadpool::submit(std::function<void()> job) {
 
@@ -35,7 +33,7 @@ void Threadpool::shutdown() {
 
     cv.notify_all();
 
-    for (auto &t : workers) {
+    for (auto& t : workers) {
         if (t.joinable())
             t.join();
     }
@@ -44,9 +42,7 @@ void Threadpool::shutdown() {
 void Threadpool::wait() {
     std::unique_lock<std::mutex> lock(mtx);
 
-    cv_done.wait(lock, [this]() {
-        return jobs.empty() && active_workers == 0;
-    });
+    cv_done.wait(lock, [this]() { return jobs.empty() && active_workers == 0; });
 }
 
 void Threadpool::worker_loop() {
@@ -54,10 +50,7 @@ void Threadpool::worker_loop() {
     while (true) {
 
         std::unique_lock<std::mutex> lock(mtx);
-
-        cv.wait(lock, [this] {
-            return stop.load() || !jobs.empty();
-        });
+        cv.wait(lock, [this] { return stop.load() || !jobs.empty(); });
 
         if (stop.load() && jobs.empty())
             return;

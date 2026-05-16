@@ -1,31 +1,32 @@
 #pragma once
 
-#include <vector>
 #include <atomic>
-#include <mutex>
-#include <condition_variable>
-#include <thread>
-#include <memory>
-#include <cstdint>
 #include <cassert>
+#include <condition_variable>
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 #include "bit_io.h"
 #include "chunk.h"
 #include "progress_bar.h"
 
 class ChunkBuffer {
-public:
-
-    ChunkBuffer(BitWriter& bw, uint32_t total_chunks, ProgressBar* progress = nullptr, bool write_headers = true);
+  public:
+    ChunkBuffer(BitWriter& bw, uint32_t total_chunks, ProgressBar* progress = nullptr,
+                bool write_headers = true);
+                
     ~ChunkBuffer();
 
     void submit_chunk(Chunk chunk);
     void finish();
 
-private:
+  private:
     enum class SlotState : uint32_t {
-        Empty    = 0,
-        Filled   = 1,
+        Empty = 0,
+        Filled = 1,
         Consumed = 2,
     };
 
@@ -39,7 +40,6 @@ private:
         uint32_t bit_count = 0;
         uint32_t original_size;
 
-
         Slot() = default;
 
         Slot(const Slot&) = delete;
@@ -49,7 +49,7 @@ private:
         Slot& operator=(Slot&&) = delete;
     };
 
-private:
+  private:
     BitWriter& bw;
 
     uint32_t total_chunks;
@@ -60,14 +60,13 @@ private:
 
     std::mutex sleep_mtx;
     std::condition_variable sleep_cv;
-    
 
     std::atomic<bool> done{false};
 
     std::thread writer_thread;
     bool write_headers;
 
-private:
+  private:
     void writer_loop();
 
     static constexpr int SPIN_COUNT = 1024;

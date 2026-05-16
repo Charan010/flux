@@ -3,12 +3,11 @@
 #include <chrono>
 #include <iostream>
 
-ProgressRenderer::ProgressRenderer(ProgressBar& progress_bar, int interval):
-    progress(progress_bar), interval_ms(interval){
-
+ProgressRenderer::ProgressRenderer(ProgressBar& progress_bar, int interval)
+    : progress(progress_bar), interval_ms(interval) {
 
     render_thread = std::thread([this]() {
-        while(!progress.done()) {
+        while (!progress.done()) {
             progress.render();
             std::this_thread::sleep_for(std::chrono::milliseconds(interval_ms));
         }
@@ -18,9 +17,8 @@ ProgressRenderer::ProgressRenderer(ProgressBar& progress_bar, int interval):
     });
 }
 
-
 ProgressRenderer::~ProgressRenderer() {
 
-    if(render_thread.joinable())
+    if (render_thread.joinable())
         render_thread.join();
 }

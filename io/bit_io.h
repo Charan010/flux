@@ -1,10 +1,10 @@
 #pragma once
-#include <fstream>
 #include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <memory>
 #include <stdexcept>
 #include <vector>
-#include <memory>
-#include <cstring>
 
 struct BitWriter {
     std::unique_ptr<char[]> io_buf;
@@ -22,9 +22,8 @@ struct BitWriter {
     void write_bytes(const std::vector<uint8_t>& data);
 };
 
-
 struct BitReader {
-    
+
     const uint8_t* data;
     size_t size;
 
@@ -36,30 +35,27 @@ struct BitReader {
     BitReader(const uint8_t* ptr, size_t len);
 
     inline void refill() {
-        while(bits_in_buf <=  120 && byte_pos < size) {
+        while (bits_in_buf <= 120 && byte_pos < size) {
             bitbuf = (bitbuf << 8) | data[byte_pos++];
             bits_in_buf += 8;
         }
     }
 
     inline uint32_t peek_bits(int n) {
-        if(n == 0)
+        if (n == 0)
             return 0;
 
         refill();
-        if(bits_in_buf < n)
-            return static_cast<uint32_t>((bitbuf << (n - bits_in_buf)) & ((((__uint128_t)1 << n) - 1)) - 1));
-        return static_cast<uint32_t>((bitbuf >> (bits_in_buf - n)) & ((((__uint128_t)1 << n) - 1));
+        if (bits_in_buf < n)
+            return static_cast<uint32_t>((bitbuf << (n - bits_in_buf)) &
+                                         (((__uint128_t)1 << n) - 1));
+        return static_cast<uint32_t>((bitbuf >> (bits_in_buf - n)) & (((__uint128_t)1 << n) - 1));
     }
 
-    inline void consume_bits(int n) {
-        bits_in_buf -= n;
-    }
-
+    inline void consume_bits(int n) { bits_in_buf -= n; }
 
     int read_bit();
     uint8_t read_byte();
     void align_to_byte();
     void read_bytes(uint8_t* dst, size_t n);
-
 };
