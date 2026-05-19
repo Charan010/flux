@@ -6,23 +6,27 @@
 #include <mutex>
 #include <string>
 
-#include "chunk_buffer.h"
+#include "ordered_queue.h"
 #include "threadpool.h"
+#include "shared_writer.h"
 
 enum class CompressionMode { Huffman, LZ4, LZ4_Huffman };
 
 class CompressionJob {
 
   public:
-    CompressionJob(Threadpool& pool, CompressionMode mode, const std::string& input,
-                   const std::string& output, size_t chunk_size);
+  
+    CompressionJob(Threadpool& pool, SharedWriter& shared_writer, CompressionMode mode,
+     const std::string& input, const std::string& output, size_t chunk_size);
 
     void start();
 
   private:
+
     void submit_chunks();
 
   private:
+
     Threadpool& pool;
 
     CompressionMode mode;
@@ -36,6 +40,6 @@ class CompressionJob {
 
     std::mutex done_mtx;
     std::condition_variable done_cv;
-
-    std::unique_ptr<ChunkBuffer> chunk_buffer;
+    std::unique_ptr<OrderedQueue>ordered_queue;
+    
 };

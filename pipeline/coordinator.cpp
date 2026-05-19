@@ -11,7 +11,8 @@ void Coordinator::compress(CompressionMode mode, const std::string& input,
         const std::string& output,
         size_t chunk_size){
 
-    CompressionJob job(pool, mode, input, output, chunk_size);
+            
+    CompressionJob job(pool, writer, mode, input, output, chunk_size);
     job.start();
     
 }

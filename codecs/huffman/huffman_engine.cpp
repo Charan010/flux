@@ -70,26 +70,22 @@ void HuffmanEngine::encode_chunk(const uint8_t* input, size_t input_size, Chunk&
     output.data = std::move(encoded);
 }
 
-void HuffmanEngine::decode_chunk(const uint8_t* input, size_t input_size, Chunk& output) {
+void HuffmanEngine::decode_chunk(const uint8_t* input, size_t input_size,Chunk& chunk){
 
-    thread_local std::vector<uint8_t> decoded;
-    decoded.clear();
+    chunk.data.clear();
+    chunk.data.resize(chunk.original_size);
 
-    decoded.resize(output.original_size);
-
-    uint8_t* out = decoded.data();
+    uint8_t* out = chunk.data.data();
 
     BitReader reader(input, input_size);
 
     uint32_t bits_read = 0;
 
-    while (bits_read < output.bit_count) {
+    while (bits_read < chunk.bit_count) {
 
         const uint32_t idx = reader.peek_bits(LUT_BITS);
         const auto& entry = primary_lut[idx];
 
-        /*tells compiler that this path is going to be executed most of the times which helps CPU
-         * predict branch conditions better*/
         if (__builtin_expect(entry.flags & ENTRY_SYMBOL, 1)) {
 
             reader.consume_bits(entry.bits);
@@ -100,20 +96,20 @@ void HuffmanEngine::decode_chunk(const uint8_t* input, size_t input_size, Chunk&
         } else {
 
             reader.consume_bits(LUT_BITS);
+
             const uint32_t extra = reader.peek_bits(entry.bits);
 
             __builtin_prefetch(&secondary_lut[entry.value + extra], 0, 1);
 
             const auto& sub = secondary_lut[entry.value + extra];
             const uint8_t suffix_bits = sub.bits - LUT_BITS;
-
             reader.consume_bits(suffix_bits);
 
             bits_read += sub.bits;
+
             *out++ = static_cast<uint8_t>(sub.value);
         }
     }
 
-    decoded.resize(out - decoded.data());
-    output.data = std::move(decoded);
+    chunk.data.resize(out - chunk.data.data());
 }

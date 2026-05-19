@@ -17,4 +17,5 @@ class Coordinator {
 
   private:
     Threadpool pool;
+    SharedWriter writer;
 };

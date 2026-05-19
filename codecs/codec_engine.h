@@ -7,6 +7,7 @@
 #include "chunk.h"
 
 class CodecEngine {
+
   public:
     virtual ~CodecEngine() = default;
 

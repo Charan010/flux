@@ -5,6 +5,7 @@
 #include "huffman.h"
 #include <codec_engine.h>
 #include "chunk.h"
+#include "ordered_queue.h"
 
 class HuffmanEngine : public CodecEngine {
 
