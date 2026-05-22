@@ -1,94 +1,141 @@
-
 #include "compression_job.h"
 
 #include <algorithm>
-#include <fstream>
-#include <latch>
 #include <memory>
+#include <stdexcept>
 
+#include "bit_io.h"
 #include "chunk.h"
-#include "codec_engine.h"
 #include "huffman_engine.h"
 #include "mmap_file.h"
 
+CompressionJob::CompressionJob(uint64_t job_id, Threadpool &pool, SharedWriter & shared_writer, 
+CompressionMode mode, const std::string &input_file, const std::string &output_file, size_t chunk_size)
 
-CompressionJob::CompressionJob(
-    Threadpool& pool,
-    SharedWriter& shared_writer,
-    CompressionMode mode,
-    const std::string& input,
-    const std::string& output,
-    size_t chunk_size
-)
-    : pool(pool),
-      shared_writer(shared_writer),
-      mode(mode),
-      input_file(input),
-      output_file(output),
-      chunk_size(chunk_size) {}
+: job_id_(job_id), pool_(pool), shared_writer_(shared_writer), mode_(mode), input_file_(input_file),
+output_file_(output_file), chunk_size_(chunk_size) {}
 
 
+uint64_t CompressionJob::id() const{
+    return job_id_;
+}
 
-void CompressionJob::start() {
+JobState CompressionJob::state() const{
+    return state_.load();
+}
 
-    MappedFile input(input_file);
+const std::string& CompressionJob::input_path() const {
+    return input_file_;
+}
 
-    if (input.size() == 0)
-        throw std::runtime_error("input file is empty");
+const std::string& CompressionJob::output_path() const {
+    return output_file_;
+}
 
-    std::shared_ptr<CodecEngine> engine;
-    switch (mode) {
+std::shared_ptr<CodecEngine> CompressionJob::create_engine(){
+
+    switch(mode_){
+
         case CompressionMode::Huffman:
-            engine = std::make_shared<HuffmanEngine>();
-            break;
+            return std::make_shared<HuffmanEngine>();
 
         default:
-            throw std::runtime_error("unsupported compression mode");
+            throw std::runtime_error("unsupported codec");
     }
 
-
-    engine->prepare_encoder(input.data(),input.size());
-
-    const size_t total_chunks = (input.size() + chunk_size - 1)/ chunk_size;
-
-    auto ordered_queue = std::make_shared<OrderedQueue>(total_chunks);
-
-    auto writer = std::make_shared<BitWriter>(output_file);
-
-    auto writer_job = std::make_shared<SharedWriter::WriterJob>();
-    writer_job->id = 0
-    ;
-
-    writer_job->queue =
-        ordered_queue;
-
-    writer_job->writer =
-        writer;
-
-    ordered_queue->attach_writer(&shared_writer, writer_job->id);
-
-    shared_writer.register_job(writer_job);
-    std::latch completion_latch(total_chunks);
-
-    for (size_t i = 0; i < total_chunks; ++i) {
-
-        const size_t offset = i * chunk_size;
-
-        const size_t len = std::min(chunk_size, input.size() - offset);
-        pool.submit([
-            engine, ordered_queue, data = input.data(), offset, len, i, &completion_latch ]{
-
-            Chunk chunk;
-            chunk.id = i;
-
-            engine->encode_chunk(data + offset, len, chunk);
-            ordered_queue->push(std::move(chunk));
-            completion_latch.count_down();
-
-
-        });
-    }
-
-    completion_latch.wait();
-    ordered_queue->close();
 }
+
+void CompressionJob::start_async() {
+
+    state_ = JobState::RUNNING;
+    auto self = shared_from_this();
+
+    pool_.submit([self] {
+
+        try {
+
+            /*
+            * Keep mmap alive for all worker tasks.
+            */
+            auto input = std::make_shared<MappedFile>(self->input_file_);
+
+            if (input->size() == 0)
+                throw std::runtime_error("input file is empty");
+
+            auto engine = self->create_engine();
+
+            engine->prepare_encoder(input->data(), input->size());
+            const size_t total_chunks = (input->size() + self->chunk_size_ - 1) / self->chunk_size_;
+            self->remaining_chunks_ = total_chunks;
+
+            /*
+            * Shared ordered output buffer.
+            */
+            self->ordered_queue_ =std::make_shared<OrderedQueue>(total_chunks, &self->shared_writer_, self->job_id_);
+
+            /*
+            * Writer job registration.
+            */
+
+            auto writer_job = std::make_shared<WriterJob>();
+
+            writer_job->id = self->job_id_;
+            writer_job->queue = self->ordered_queue_;
+            writer_job->writer = std::make_shared<BitWriter>(self->output_file_);
+
+
+
+
+
+            writer_job->owner = self;
+
+            /*
+            * Keep local ownership too.
+            */
+            self->writer_job_ = writer_job;
+            self->shared_writer_.register_job(writer_job);
+
+            engine->write_global_header(*writer_job->writer, static_cast<uint32_t>(input->size()),
+                static_cast<uint32_t>(total_chunks));
+
+            /*
+            * Submit compression workers.
+            */
+            for (size_t i = 0; i < total_chunks; ++i) {
+
+                const size_t offset = i * self->chunk_size_;
+                const size_t len = std::min(self->chunk_size_, input->size() - offset);
+
+                self->pool_.submit([self, engine, input, offset, len, i] {
+
+                    try {
+
+                        Chunk chunk;
+                        chunk.id = static_cast<uint32_t>(i);
+
+                        engine->encode_chunk(input->data() + offset, len, chunk);
+
+                        self->ordered_queue_->push(std::move(chunk));
+
+                        /*
+                        * Last producer closes queue.
+                        */
+                        if (self->remaining_chunks_.fetch_sub(1) == 1) {
+
+                            self->state_ = JobState::WRITING;
+                            self->ordered_queue_->close();
+                        }
+
+                    } catch (...) {
+                        self->mark_failed();
+                    }
+                });
+            }
+
+        } catch (...) {
+            self->mark_failed();
+        }
+    });
+
+}
+

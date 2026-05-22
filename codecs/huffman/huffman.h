@@ -76,4 +76,5 @@ Node* build_decode_tree(const std::array<HuffmanCode, 256>& table, std::vector<N
 
 void build_decode_lut(const std::array<HuffmanCode, 256>& table, DecodeLUT& primary,
                       SecondaryLUT& secondary);
-FrequencyTable compute_frequency(uint8_t* file_ptr, size_t file_size);
+
+FrequencyTable compute_frequency(const uint8_t* file_ptr, size_t file_size);

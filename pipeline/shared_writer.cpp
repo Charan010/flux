@@ -13,8 +13,8 @@ SharedWriter::~SharedWriter(){
 
     if(writer_thread.joinable())
         writer_thread.join();
-
 }
+
 
 void SharedWriter::register_job(std::shared_ptr<WriterJob> job){
 
@@ -47,7 +47,7 @@ void SharedWriter::writer_loop(){
                 return !running || !ready_jobs.empty(); 
             });
 
-            if(!running && !ready_jobs.empty())
+            if(!running && ready_jobs.empty())
                 return;
 
             job_id = ready_jobs.front();

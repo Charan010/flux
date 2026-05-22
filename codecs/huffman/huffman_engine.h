@@ -5,7 +5,6 @@
 #include "huffman.h"
 #include <codec_engine.h>
 #include "chunk.h"
-#include "ordered_queue.h"
 
 class HuffmanEngine : public CodecEngine {
 
@@ -16,6 +15,8 @@ class HuffmanEngine : public CodecEngine {
     void decode_chunk(const uint8_t* input, size_t input_size, Chunk& output) override;
     void prepare_encoder(const uint8_t* data, size_t size) override;
     void prepare_decoder(const uint8_t* header_data, size_t& pos) override;
+    void write_global_header(BitWriter& bw, uint32_t orig_size, uint32_t num_chunks) override;
+    void read_global_header(const uint8_t *data, size_t size, uint32_t& orig_size, uint32_t& num_chunks) override;
 
   private:
     std::array<HuffmanCode, 256> code_table{};

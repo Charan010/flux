@@ -23,17 +23,19 @@
 
 */
 
-class SharedWriter{
 
-public:
 
 struct WriterJob{
 
     int id;
     std::shared_ptr<OrderedQueue> queue;
     std::shared_ptr<BitWriter> writer;
+    std::weak_ptr<CompressionJob> owner;
 
 };
+
+
+class SharedWriter{
 
 public:
 

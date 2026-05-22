@@ -12,16 +12,64 @@
 For each chunk:
 
 +--------------------------------------------------+
-| 4B : original chunk size                           |
 | 4B : compressed bit count                          |
 | NB : Huffman encoded bitstream                    |
 +-------------------------------------------------+
 
 */
 
+static constexpr uint8_t MAGIC[4] = {'F','L','U','X'};
+static constexpr uint8_t CODEC_HUFFMAN = 0;
+static constexpr uint8_t CODEC_LZ4 = 1;
+static constexpr uint8_t CODEC_MIXED = 2;\
+
+
+void HuffmanEngine::write_global_header(BitWriter &bw, uint32_t orig_size, uint32_t num_chunks){
+
+
+    for(uint8_t b : MAGIC)
+        bw.write_byte(b);
+
+    bw.write_byte(CODEC_HUFFMAN);
+
+    //256 bytes of code lengths to build canonical table.
+    for(uint32_t len : lengths)
+        bw.write_byte(len);
+        
+    write_uint32(bw, orig_size);
+    write_uint32(bw, num_chunks);
+
+}
+
+void HuffmanEngine::read_global_header(const uint8_t* data, size_t size,
+                     uint32_t& orig_size, uint32_t& num_chunks)
+{
+    BitReader br(data, size);  
+
+    for (uint8_t expected : MAGIC) {
+        if (br.read_byte() != expected)
+            throw std::runtime_error("bad magic: not a FLUX file");
+    }
+
+    uint8_t codec = br.read_byte();
+    if (codec != CODEC_HUFFMAN)
+        throw std::runtime_error("codec mismatch");
+
+    for (uint8_t& len : lengths)
+        len = br.read_byte();
+
+    generate_canonical_table(lengths, code_table);
+    build_decode_lut(code_table, primary_lut, secondary_lut);
+
+    orig_size  = read_uint32(br);
+    num_chunks = read_uint32(br);
+    
+}
+
+
 void HuffmanEngine::prepare_encoder(const uint8_t* data, size_t size) {
 
-    FrequencyTable freq = compute_frequency(const_cast<uint8_t*>(data), size);
+    FrequencyTable freq = compute_frequency(data, size);
 
     std::vector<Node> storage;
 

@@ -37,6 +37,8 @@ target_include_directories(flux PRIVATE
     ${CMAKE_SOURCE_DIR}/threadpool
     ${CMAKE_SOURCE_DIR}/progress
     ${CMAKE_SOURCE_DIR}/jobs
+     ${CMAKE_SOURCE_DIR}/format
+     
 )
 
 target_compile_options(flux PRIVATE
