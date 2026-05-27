@@ -1,6 +1,6 @@
 # flux
 
-A parallel file compression system built around a chunked pipeline architecture in C++, optimized for throughput over maximum compression ratio.
+A parallel file compression system built around a chunked pipeline architecture in C++, optimized for throughput over squeezing maximum compression ratio.
 
 ---
 
@@ -22,7 +22,7 @@ File → Chunk Splitter → Job Queue → Worker Pool → Codec → Ordered Writ
 
 Available codecs: `lz4` `huffman`
 
-If you want to go deeper on the design decisions, tradeoffs, and the intuition behind the pipeline — take a look at [architecture.md](architecture.md).
+If you want to go deeper on the design decisions, tradeoffs, and the intuition behind the pipeline .take a look at [architecture.md](architecture.md).
 
 ---
 
@@ -33,7 +33,7 @@ If you want to go deeper on the design decisions, tradeoffs, and the intuition b
 ./start.sh    # start an existing installation
 ```
 
-Web UI (nothing fancy) → `http://localhost:8080`
+Web UI (not the best looking frontend ^_^) → `http://localhost:8080`
 
 ---
 
@@ -45,7 +45,7 @@ The Go server talks to the C++ daemon over a Unix socket at `/tmp/flux.sock`. Un
 
 ## Benchmarks
 
-Tested on `enwik9` (953.67 MB). Numbers reflect computation only — I/O is excluded.
+Tested on `enwik9` (953.67 MB). Benchmark measures computation only — I/O is excluded.
 
 | Chunk size | Compressed | Ratio | Compress | Decompress |
 |---|---|---|---|---|
@@ -72,4 +72,4 @@ Tested on `enwik9` (953.67 MB). Numbers reflect computation only — I/O is excl
 
 - C++20, CMake ≥ 3.16
 - Go
-- Linux or macOS
+- Linux or macOS (Windows compatability will be added in future)
