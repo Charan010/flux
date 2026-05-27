@@ -1,105 +1,119 @@
 #include "shared_writer.h"
 
-SharedWriter::SharedWriter():
-writer_thread(&SharedWriter::writer_loop, this) {}
+#include "compression_job.h"
+#include "huffman.h"
 
-SharedWriter::~SharedWriter(){
-    {
-        std::lock_guard<std::mutex> lock(mtx);
-        running = false;
-    }
+SharedWriter::SharedWriter()
+    : writer_thread(&SharedWriter::writer_loop, this) {}
 
-    cv.notify_all();
+SharedWriter::~SharedWriter() {
 
-    if(writer_thread.joinable())
-        writer_thread.join();
-}
-
-
-void SharedWriter::register_job(std::shared_ptr<WriterJob> job){
-
+  {
     std::lock_guard lock(mtx);
-    jobs[job -> id] = std::move(job); 
+    running = false;
+  }
 
+  cv.notify_one();
+
+  if (writer_thread.joinable())
+    writer_thread.join();
 }
 
-void SharedWriter::notify_ready(int job_id) {
+void SharedWriter::register_job(std::shared_ptr<WriterJob> job) {
 
-    {
-        std::lock_guard lock(mtx);
-        ready_jobs.push(job_id);
-    }
-
-    cv.notify_one();
+  std::lock_guard lock(mtx);
+  jobs[job->id] = std::move(job);
+  cv.notify_one();
 }
 
-void SharedWriter::writer_loop(){
+void SharedWriter::notify() { cv.notify_one(); }
 
-    while(true){
+void SharedWriter::writer_loop() {
 
-        int job_id;
+  while (true) {
 
-        {
-            std::unique_lock lock(mtx);
+    std::unique_lock lock(mtx);
+    cv.wait(lock, [this] { return !running || !jobs.empty(); });
 
-            /* Sleep until the writer thread is stopped or there are no ready jobs. */
-            cv.wait(lock, [&]{
-                return !running || !ready_jobs.empty(); 
-            });
+    if (!running && jobs.empty())
+      break;
 
-            if(!running && ready_jobs.empty())
-                return;
+    bool made_progress = true;
 
-            job_id = ready_jobs.front();
-            ready_jobs.pop();
-        }
+    while (made_progress) {
 
-        std::shared_ptr<WriterJob> job;
+      made_progress = false;
 
-        {
-            std::lock_guard lock(mtx);
+      for (auto it = jobs.begin(); it != jobs.end();) {
 
-            auto it = jobs.find(job_id);
+        auto &job = it->second;
 
-            if(it == jobs.end())
-                continue;
+        // Drain all consecutive in-order chunks available right now
+        while (true) {
 
-            job = it -> second;
-        }
+          Chunk chunk;
+          if (!job->queue->try_pop(chunk))
+            break;
 
-        /*
-        * Drains all contigous ready chunks in one go.
-        * The main issue is that suppose chunk x+1 has arrived before chunk x. So, when the writer thread
-        * gets notified for chunk x and writes chunk x to the file. OrderedQueue doesnt notify about chunk x + 1 arrival.
-        * This can cause deadlock as all chunks are just waiting in memory and writer is not draining them.
-        */
+          made_progress = true;
 
-        while(true){
+          lock.unlock();
 
-            auto chunk_opt = job -> queue -> try_pop();
+          if (job->raw_output) {
+            job->writer->write_bytes(chunk.data);
+          } else {
+            write_uint32(*job->writer, chunk.compressed_bytes);
+            write_uint32(*job->writer, chunk.bit_count);
+            job->writer->write_bytes(chunk.data);
+          }
 
-            if(!chunk_opt)
-                break;
-
-            job -> writer -> write_bytes(chunk_opt -> data);
-        }
-
-        job->queue->clear_scheduled();
-
-         if (auto chunk = job->queue->try_pop()) {
-
-            job->writer->write_bytes(chunk->data);
-
-            notify_ready(job_id);
+          lock.lock();
         }
 
         if (job->queue->is_done()) {
 
-            std::lock_guard lock(mtx);
+          // Final drain after queue is closed
+          bool final_drained = false;
 
-            jobs.erase(job_id);
+          while (true) {
+            Chunk chunk;
+            if (!job->queue->try_pop(chunk))
+              break;
+
+            final_drained = true;
+
+            lock.unlock();
+
+            if (job->raw_output) {
+              job->writer->write_bytes(chunk.data);
+            } else {
+              write_uint32(*job->writer, chunk.compressed_bytes);
+              write_uint32(*job->writer, chunk.bit_count);
+              job->writer->write_bytes(chunk.data);
+            }
+
+            lock.lock();
+          }
+
+          if (final_drained)
+            made_progress = true;
+
+          lock.unlock();
+
+          job->writer->flush();
+
+          if (job->on_complete)
+            job->on_complete();
+
+          lock.lock();
+
+          it = jobs.erase(it);
+          made_progress = true;
+
+        } else {
+          ++it;
         }
-
+      }
     }
+  }
 }
-

@@ -2,33 +2,34 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <functional>
 #include <mutex>
-#include <queue>
 #include <thread>
 #include <vector>
 
 class Threadpool {
 
-  public:
-    explicit Threadpool(size_t num_threads);
+public:
+  explicit Threadpool(size_t num_threads);
 
-    void submit(std::function<void()> job);
-    void shutdown();
-    void wait();
+  void submit(std::function<void()> job);
+  void shutdown();
+  void wait();
 
-    ~Threadpool();
+  ~Threadpool();
 
-  private:
-    void worker_loop();
+private:
+  void worker_loop();
 
-    std::vector<std::thread> workers;
-    std::queue<std::function<void()>> jobs;
+  std::vector<std::thread> workers;
 
-    std::mutex mtx;
-    std::condition_variable cv;
-    std::condition_variable cv_done;
-    size_t active_workers = 0;
+  std::deque<std::function<void()>> jobs;
 
-    std::atomic_bool stop{false};
+  std::mutex mtx;
+  std::condition_variable cv;
+  std::condition_variable cv_done;
+  size_t active_workers = 0;
+
+  std::atomic_bool stop{false};
 };

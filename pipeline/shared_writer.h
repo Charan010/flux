@@ -1,6 +1,7 @@
 #pragma once
 
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <queue>
@@ -10,66 +11,56 @@
 #include "bit_io.h"
 #include "ordered_queue.h"
 
+
+class CompressionJob;
+
 /*
-* SharedWriter:
-* Centralized serial writer for all compression and decompression jobs.
-*
-*
+ * SharedWriter:
+ * Centralized serial writer for all compression and decompression jobs.
+ *
+ * Contract:
+ * - Multiple jobs can enqueue write notifications concurrently.
+ * - Single internal thread performs writing of chunks to disk.
+ * - Each OrderedQueue guarantees in-order chunk delivery.
+ */
 
-* Contract:
-* -Multiple jobs can may enqueue write notifications concurrently.
-* -Single internal thread performs writing of chunks to disk.
-* - Each OrderedQueue gurantess in-order chunk delivery.
+class OrderedQueue;
 
-*/
+struct WriterJob {
+  uint64_t id;
+  std::shared_ptr<OrderedQueue> queue;
+  std::shared_ptr<BitWriter> writer;
+  std::weak_ptr<CompressionJob> owner;
 
-
-
-struct WriterJob{
-
-    int id;
-    std::shared_ptr<OrderedQueue> queue;
-    std::shared_ptr<BitWriter> writer;
-    std::weak_ptr<CompressionJob> owner;
-
+  std::function<void()> on_complete;
+  bool raw_output = false;
 };
 
-
-class SharedWriter{
+class SharedWriter {
 
 public:
+  SharedWriter();
+  ~SharedWriter();
 
-SharedWriter();
-~SharedWriter();
+  void register_job(std::shared_ptr<WriterJob> job);
 
-
-/*
-* Register a new writable job.
-* Thread-safe
-*/
-void register_job(std::shared_ptr<WriterJob> job);
-
-/*
-* This is used by OrderedQueue to notify that head/expected chunk has arrived in the slot.
-*  Thread-safe.
-*/
-void notify_ready(int job_id);
-
+  /*
+   * Wake writer thread.
+   *
+   * Invariant:
+   * Waking up doesn't really imply that next chunk id has arrived in the
+   * ordered queue but instead just a hint to the shared writer that this may be
+   * the chunk that needs to be written to disk.
+   */
+  void notify();
 
 private:
-
-void writer_loop();
+  void writer_loop();
 
 private:
-
-std::unordered_map<int, std::shared_ptr<WriterJob>> jobs;
-std::queue<int> ready_jobs;
-
-std::mutex mtx;
-std::condition_variable cv;
-std::thread writer_thread;
-
-bool running = true;
-
+  std::unordered_map<uint64_t, std::shared_ptr<WriterJob>> jobs;
+  std::mutex mtx;
+  std::condition_variable cv;
+  std::thread writer_thread;
+  bool running = true;
 };
-

@@ -1,80 +1,58 @@
 #include "ordered_queue.h"
 #include "shared_writer.h"
 
-OrderedQueue::OrderedQueue(uint32_t total_chunks, SharedWriter *writer, int job_id):
-    writer_(writer), job_id_(job_id), total_(total_chunks), slots_(total_chunks) {}
+OrderedQueue::OrderedQueue(size_t total_chunks, SharedWriter *writer,
+                           uint64_t job_id)
+    : total_chunks_(total_chunks), job_id_(job_id), shared_writer_(writer) {
 
-void OrderedQueue::push(Chunk chunk){
 
-    bool should_notify = false;
-
-    {
-        std::lock_guard<std::mutex> lock(mtx_);
-        const uint32_t id = chunk.id;
-
-        slots_[id].chunk = std::move(chunk);
-        slots_[id].filled = true;
-
-        if(id == next_expected_ && !scheduled_){
-            scheduled_ = true;
-            should_notify = true;
-        }
-    }
-
-    if(should_notify)
-        writer_ -> notify_ready(job_id_);
-
+  pending.reserve(total_chunks);
 }
 
-std::optional<Chunk> OrderedQueue::try_pop(){
+void OrderedQueue::push(Chunk chunk) {
 
-    std::lock_guard<std::mutex> lock(mtx_);
+  const uint32_t id = chunk.id;
 
-    if(next_expected_ >= total_)
-        return std::nullopt;
+  {
+    std::lock_guard lock(mtx);
 
-    if(!slots_[next_expected_].filled)
-        return std::nullopt;
+    auto [it, inserted] = pending.emplace(id, std::move(chunk));
+    if (!inserted)
+      throw std::runtime_error("duplicate chunk id");
+  }
 
-    Chunk out = std::move(slots_[next_expected_].chunk);
-    slots_[next_expected_].filled = false;
-
-    ++next_expected_;
-    return out;
-
+  if (shared_writer_)
+    shared_writer_->notify();
 }
 
-void OrderedQueue::close(){
+bool OrderedQueue::try_pop(Chunk &out) {
 
-    bool should_notify = false;
+  std::lock_guard lock(mtx);
 
-    {
-        std::lock_guard<std::mutex> lock(mtx_);
-        closed_ = true;
+  auto it = pending.find(expected);
+  if (it == pending.end())
+    return false;
 
-        if(!scheduled_){
-            scheduled_ = true;
-            should_notify = true;            
-        }
-    }
+  out = std::move(it->second);
+  pending.erase(it);
+  ++expected;
 
-    if(should_notify)
-        writer_ -> notify_ready(job_id_);
+  return true;
 }
 
+bool OrderedQueue::is_done() {
 
-bool OrderedQueue::is_done() const{
-
-    std::lock_guard<std::mutex> lock(mtx_);
-    return closed_ && next_expected_ == total_;
+  std::lock_guard lock(mtx);
+  return done && pending.empty();
 }
 
-void OrderedQueue::clear_scheduled(){
+void OrderedQueue::close() {
 
-    std::lock_guard<std::mutex> lock(mtx_);
-    scheduled_ = false;
+  {
+    std::lock_guard lock(mtx);
+    done = true;
+  }
+
+  if (shared_writer_)
+    shared_writer_->notify();
 }
-
-
-
-
