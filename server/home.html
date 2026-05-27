@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Flux</title>
+
+  <style>
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 40px;
+      background: #0f1115;
+      color: #e6edf3;
+      font-family: sans-serif;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: auto;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 25px;
+    }
+
+    h1 {
+      margin-top: 0;
+      font-size: 32px;
+    }
+
+    h2 {
+      margin-top: 0;
+      font-size: 20px;
+    }
+
+    input,
+    select,
+    button {
+      width: 100%;
+      margin-top: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #30363d;
+      background: #0d1117;
+      color: white;
+      font-size: 14px;
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button:hover {
+      background: #1f2937;
+    }
+
+    .status {
+      margin-top: 15px;
+      color: #8b949e;
+      word-break: break-word;
+    }
+
+    .success {
+      color: #3fb950;
+    }
+
+    .error {
+      color: #f85149;
+    }
+
+    code {
+      background: #0d1117;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+
+    <h1>Flux</h1>
+
+    <div class="card">
+
+      <h2>Compress / Decompress</h2>
+
+      <input type="file" id="file" />
+
+      <select id="action">
+        <option value="compress">Compress</option>
+        <option value="decompress">Decompress</option>
+      </select>
+
+      <select id="codec">
+        <option value="lz4">lz4</option>
+        <option value="huffman">huffman</option>
+      </select>
+
+      <button onclick="run()">Run</button>
+
+      <div class="status" id="status"></div>
+
+    </div>
+
+    <div class="card">
+
+      <h2>Verify Integrity</h2>
+
+      <input type="file" id="verify1" />
+      <input type="file" id="verify2" />
+
+      <button onclick="verifyFiles()">Verify SHA256</button>
+
+      <div class="status" id="verify-status"></div>
+
+    </div>
+
+  </div>
+
+  <script>
+
+    async function run() {
+
+      const fileInput = document.getElementById("file");
+      const action = document.getElementById("action").value;
+      const codec = document.getElementById("codec").value;
+      const status = document.getElementById("status");
+
+      if (!fileInput.files.length) {
+        status.className = "status error";
+        status.innerText = "choose a file";
+        return;
+      }
+
+      const file = fileInput.files[0];
+
+      const form = new FormData();
+      form.append("file", file);
+
+      let url = "/" + action;
+
+      if (action === "compress") {
+        url += "?codec=" + codec;
+      }
+
+      status.className = "status";
+      status.innerText = "processing...";
+
+      try {
+
+        const res = await fetch(url, {
+          method: "POST",
+          body: form
+        });
+
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+
+        const blob = await res.blob();
+
+        let filename = "output";
+
+        const disposition = res.headers.get("Content-Disposition");
+
+        if (disposition) {
+
+          const match = disposition.match(/filename="(.+)"/);
+
+          if (match) {
+            filename = match[1];
+          }
+        }
+
+        const a = document.createElement("a");
+
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+
+        document.body.appendChild(a);
+
+        a.click();
+
+        a.remove();
+
+        status.className = "status success";
+
+        if (action === "compress") {
+
+          const ratio = res.headers.get("X-Ratio");
+          const inSize = res.headers.get("X-Original-Size");
+          const outSize = res.headers.get("X-Compressed-Size");
+
+          status.innerHTML =
+            `done<br><br>` +
+            `input: ${(inSize / (1024 * 1024)).toFixed(2)} MB<br>` +
+            `output: ${(outSize / (1024 * 1024)).toFixed(2)} MB<br>` +
+            `ratio: ${ratio}x`;
+
+        } else {
+
+          const outSize = res.headers.get("X-Output-Size");
+
+          status.innerHTML =
+            `done<br><br>` +
+            `output: ${(outSize / (1024 * 1024)).toFixed(2)} MB`;
+        }
+
+      } catch (err) {
+
+        status.className = "status error";
+        status.innerText = err.message;
+      }
+    }
+
+    async function verifyFiles() {
+
+      const status = document.getElementById("verify-status");
+
+      const file1 = document.getElementById("verify1").files[0];
+      const file2 = document.getElementById("verify2").files[0];
+
+      if (!file1 || !file2) {
+        status.className = "status error";
+        status.innerText = "choose both files";
+        return;
+      }
+
+      const form = new FormData();
+
+      form.append("file1", file1);
+      form.append("file2", file2);
+
+      status.className = "status";
+      status.innerText = "verifying...";
+
+      try {
+
+        const res = await fetch("/verify", {
+          method: "POST",
+          body: form
+        });
+
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+
+        const data = await res.json();
+
+        if (data.match) {
+
+          status.className = "status success";
+
+          status.innerHTML =
+            `files are identical<br><br>` +
+            `<code>${data.hash1}</code>`;
+
+        } else {
+
+          status.className = "status error";
+          status.innerHTML =
+            `files differ<br><br>` +
+            `file1:<br><code>${data.hash1}</code><br><br>` +
+            `file2:<br><code>${data.hash2}</code>`;
+        }
+
+      } catch (err) {
+
+        status.className = "status error";
+        status.innerText = err.message;
+      }
+    }
+
+  </script>
+
+</body>
+</html>

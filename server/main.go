@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -274,6 +276,110 @@ func handlePing(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"status":"ok"}`)
 }
 
+func sha256File(path string) (string, error) {
+
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+func handleVerify(w http.ResponseWriter, r *http.Request) {
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseMultipartForm(20 << 30); err != nil {
+		http.Error(w, "failed to parse multipart form", http.StatusBadRequest)
+		return
+	}
+
+	file1, header1, err := r.FormFile("file1")
+	if err != nil {
+		http.Error(w, "missing file1", http.StatusBadRequest)
+		return
+	}
+	defer file1.Close()
+
+	file2, header2, err := r.FormFile("file2")
+	if err != nil {
+		http.Error(w, "missing file2", http.StatusBadRequest)
+		return
+	}
+	defer file2.Close()
+
+	path1 := tempFilePath(filepath.Ext(header1.Filename))
+	path2 := tempFilePath(filepath.Ext(header2.Filename))
+
+	defer cleanup(path1, path2)
+
+	dst1, err := os.Create(path1)
+	if err != nil {
+		http.Error(w, "failed to create temp file", http.StatusInternalServerError)
+		return
+	}
+
+	dst2, err := os.Create(path2)
+	if err != nil {
+		http.Error(w, "failed to create temp file", http.StatusInternalServerError)
+		return
+	}
+
+	io.Copy(dst1, file1)
+	io.Copy(dst2, file2)
+
+	dst1.Close()
+	dst2.Close()
+
+	hash1, err := sha256File(path1)
+	if err != nil {
+		http.Error(w, "hash failed", http.StatusInternalServerError)
+		return
+	}
+
+	hash2, err := sha256File(path2)
+	if err != nil {
+		http.Error(w, "hash failed", http.StatusInternalServerError)
+		return
+	}
+
+	type verifyResponse struct {
+		Match bool   `json:"match"`
+		Hash1 string `json:"hash1"`
+		Hash2 string `json:"hash2"`
+	}
+
+	res := verifyResponse{
+		Match: hash1 == hash2,
+		Hash1: hash1,
+		Hash2: hash2,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	json.NewEncoder(w).Encode(res)
+}
+
+func handleIndex(w http.ResponseWriter, r *http.Request) {
+
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	http.ServeFile(w, r, "home.html")
+}
+
 func main() {
 
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
@@ -288,13 +394,13 @@ func main() {
 	mux.HandleFunc("/compress", handleCompress)
 	mux.HandleFunc("/decompress", handleDecompress)
 	mux.HandleFunc("/ping", handlePing)
+	mux.HandleFunc("/", handleIndex)
+	mux.HandleFunc("/verify", handleVerify)
 
 	log.Printf("flux HTTP server listening on %s", listenAddr)
 	log.Printf("  POST /compress?codec=lz4|huffman  (multipart file)")
 	log.Printf("  POST /decompress                  (multipart file)")
 	log.Printf("  GET  /ping")
 
-	if err := http.ListenAndServe(listenAddr, mux); err != nil {
-		log.Fatalf("server failed: %v", err)
-	}
+	log.Fatal(http.ListenAndServe(listenAddr, mux))
 }
