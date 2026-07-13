@@ -34,10 +34,6 @@ static BenchResult run_bench(const uint8_t *data, size_t data_size,
                              size_t chunk_size, int iters, Threadpool &pool) {
 
   const size_t num_chunks = (data_size + chunk_size - 1) / chunk_size;
-
-  // ── pre-allocate per-chunk buffers ────────────────────────────────────
-  // We pre-alloc compressed storage at lz4_compress_bound per chunk so the
-  // benchmark doesn't measure allocator behaviour.
   const size_t bound = lz4_compress_bound(chunk_size);
 
   struct ChunkBuf {
@@ -55,19 +51,15 @@ static BenchResult run_bench(const uint8_t *data, size_t data_size,
     bufs[i].original_size = orig;
   }
 
-  // ── warm-up pass (single-threaded, not timed) ─────────────────────────
   for (size_t i = 0; i < num_chunks; ++i) {
     const uint8_t *src = data + i * chunk_size;
     bufs[i].compressed_size =
         lz4_compress(src, bufs[i].original_size, bufs[i].compressed.data());
   }
 
-  // ── timed compress iterations ─────────────────────────────────────────
   std::vector<double> comp_times(iters);
   for (int it = 0; it < iters; ++it) {
 
-    // Use a simple mutex+counter to synchronise parallel chunks instead
-    // of the full pipeline machinery.
     std::atomic<size_t> done{0};
     std::mutex finish_mtx;
     std::condition_variable finish_cv;
@@ -94,7 +86,6 @@ static BenchResult run_bench(const uint8_t *data, size_t data_size,
     comp_times[it] = std::chrono::duration<double>(t1 - t0).count();
   }
 
-  // ── timed decompress iterations ───────────────────────────────────────
   std::vector<double> decomp_times(iters);
   for (int it = 0; it < iters; ++it) {
 
@@ -123,7 +114,6 @@ static BenchResult run_bench(const uint8_t *data, size_t data_size,
     decomp_times[it] = std::chrono::duration<double>(t1 - t0).count();
   }
 
-  // ── aggregate ─────────────────────────────────────────────────────────
   size_t total_compressed = 0;
   for (auto &b : bufs)
     total_compressed += b.compressed_size;
@@ -141,8 +131,6 @@ static BenchResult run_bench(const uint8_t *data, size_t data_size,
   return r;
 }
 
-// ── pretty printer
-// ────────────────────────────────────────────────────────────
 
 static void print_row(const char *label, const char *value,
                       const char *unit = "", const char *color = term::reset) {
@@ -151,7 +139,6 @@ static void print_row(const char *label, const char *value,
             << term::reset << "  " << term::dim << unit << term::reset << "\n";
 }
 
-// ── public entry point ───────────────────────────────────────────────────────
 
 void run_bench_mode(const std::string &input_path, Threadpool &pool) {
 
@@ -165,7 +152,6 @@ void run_bench_mode(const std::string &input_path, Threadpool &pool) {
             << "  " << gray << "threads:" << reset << " "
             << Config::threadpool_size << "\n\n";
 
-  // ── load file ─────────────────────────────────────────────────────────
   MappedFile mapped(input_path);
   if (mapped.size() == 0) {
     std::cerr << red << "[ERR]" << reset
@@ -176,7 +162,6 @@ void run_bench_mode(const std::string &input_path, Threadpool &pool) {
   std::cout << "  " << cyan << "running benchmark..." << reset
             << "  (1 warm-up + 5 timed iterations each)\n\n";
 
-  // ── benchmark at 3 chunk sizes ────────────────────────────────────────
   struct Trial {
     const char *label;
     size_t chunk_size;
@@ -184,11 +169,10 @@ void run_bench_mode(const std::string &input_path, Threadpool &pool) {
   const Trial trials[] = {
       {"64 KB chunks", 64 << 10},
       {"1 MB  chunks", 1 << 20},
-      {"4 MB  chunks", 4 << 20}, // default config
+      {"4 MB  chunks", 4 << 20}, 
   };
 
   for (auto &t : trials) {
-    // skip chunk sizes larger than the file itself
     if (t.chunk_size > mapped.size() * 4)
       continue;
 

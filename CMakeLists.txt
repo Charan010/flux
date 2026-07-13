@@ -33,9 +33,6 @@ add_executable(flux
     threadpool/threadpool.cpp
 
     daemon/daemon.cpp
-	
-    CLI/cli.cpp
-	
     benchmark/bench.cpp
 )
 
@@ -49,7 +46,6 @@ target_include_directories(flux PRIVATE
     ${CMAKE_SOURCE_DIR}/jobs
 	${CMAKE_SOURCE_DIR}/daemon
 	${CMAKE_SOURCE_DIR}/benchmark
-	${CMAKE_SOURCE_DIR}/CLI
 )
 
 target_compile_options(flux PRIVATE

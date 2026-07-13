@@ -23,22 +23,30 @@ struct JobHandle {
 };
 
 
+struct ErrorReporter {
+  uint64_t    job_id;
+  int         fd;          // daemon client fd — send_json writes here then closes
+  std::once_flag fired;
+
+  void report(const std::string &reason) noexcept;
+
+};
+
 class Coordinator {
 public:
   explicit Coordinator(size_t threads);
   ~Coordinator();
 
-  JobHandle compress(CompressionMode mode, const std::string &input,const std::string &output,
-		 size_t chunk_size, std::function<void(uint64_t, bool)> on_done = nullptr);
+  JobHandle compress(int client_fd, CompressionMode mode, const std::string &input, const std::string &output, size_t chunk_size);
 
-  JobHandle decompress(CompressionMode mode, const std::string &input, const std::string &output,
-		 size_t chunk_size, std::function<void(uint64_t, bool)> on_done = nullptr);
+  JobHandle decompress(int client_fd, CompressionMode mode, const std::string &input, const std::string &output, size_t chunk_size);
 
 private:
   template <typename Job>
   JobHandle submit(std::shared_ptr<Job> job, uint64_t job_id,
-                   std::function<void(uint64_t, bool)> on_done);
+                   std::shared_ptr<ErrorReporter> reporter);
 
-  Threadpool pool_;
+  Threadpool   pool_;
   SharedWriter writer_;
+  std::atomic<uint64_t> next_job_id_{1};
 };

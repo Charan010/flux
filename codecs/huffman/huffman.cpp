@@ -2,7 +2,7 @@
 #include "bit_io.h"
 #include <array>
 #include <assert.h>
-#include <unordered_map>
+
 
 Node::Node(Node *l, Node *r)
     : ch(0), freq(l->freq + r->freq), left(l), right(r) {}
@@ -14,7 +14,7 @@ Node::Node(uint8_t c, uint64_t f)
 Node::Node() : ch(0), freq(0), left(nullptr), right(nullptr) {}
 
 bool Compare::operator()(Node *a, Node *b){
-	 return a->freq > b->freq; 
+	 return a->freq > b->freq;
 }
 
 Node *build_huffman_tree(const FrequencyTable &freq, std::vector<Node> &storage) {
@@ -50,20 +50,18 @@ Node *build_huffman_tree(const FrequencyTable &freq, std::vector<Node> &storage)
 
 void compute_lengths(Node *root, uint8_t depth, std::array<uint8_t, 256> &lengths){
 
+  	if (!root)
+    	return;
 
-  if (!root)
-    return;
+  	const bool is_leaf = (!root->left && !root->right);
 
-  const bool is_leaf = (!root->left && !root->right);
+  	if (is_leaf) {
+    	lengths[root->ch] = (depth == 0) ? 1 : depth;
+    	return;
+  	}
 
-  if (is_leaf) {
-    lengths[root->ch] = (depth == 0) ? 1 : depth;
-    return;
-
-  }
-
-  compute_lengths(root->left, depth + 1, lengths);
-  compute_lengths(root->right, depth + 1, lengths);
+  	compute_lengths(root->left, depth + 1, lengths);
+  	compute_lengths(root->right, depth + 1, lengths);
 }
 
 void generate_canonical_table(const std::array<uint8_t, 256> &lengths, std::array<HuffmanCode, 256> &table) {
@@ -78,6 +76,7 @@ void generate_canonical_table(const std::array<uint8_t, 256> &lengths, std::arra
       		bl_count[len]++;
     	}
   	}
+	
 
   	std::array<uint64_t, MAX_BITS + 1> next_code{};
   	uint64_t code = 0;
@@ -172,8 +171,8 @@ void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &prim
         		entry.value = sym;
         		entry.bits = code.len;
         		entry.flags = ENTRY_SYMBOL;
-      		}	
-    	
+      		}
+
 		}else {
 
       		const uint32_t prefix = static_cast<uint32_t>(code.bits >> (code.len - LUT_BITS)) & (LUT_SIZE - 1);
@@ -199,35 +198,25 @@ void build_decode_lut(const std::array<HuffmanCode, 256> &table, DecodeLUT &prim
   	}
 }
 
-FrequencyTable compute_frequency(const uint8_t *file_ptr, size_t file_size) {
+FrequencyTable compute_frequency(const uint8_t* file_ptr, size_t file_size) {
 
-	FrequencyTable t0{}, t1{}, t2{}, t3{}, t4{}, t5{}, t6{}, t7{};
+    FrequencyTable t0{}, t1{}, t2{}, t3{};
 
-  	constexpr size_t PREFETCH_DISTANCE = 256;
+    size_t i = 0;
+    for (; i + 4 <= file_size; i += 4) {
+        ++t0[file_ptr[i + 0]];
+        ++t1[file_ptr[i + 1]];
+        ++t2[file_ptr[i + 2]];
+        ++t3[file_ptr[i + 3]];
+    }
 
-  	size_t i = 0;
-  	for (; i + 8 <= file_size; i += 8) {
-    	if (i + PREFETCH_DISTANCE < file_size)
-      		__builtin_prefetch(file_ptr + i + PREFETCH_DISTANCE, 0, 0);
+    for (; i < file_size; ++i)
+        ++t0[file_ptr[i]];
 
-    	t0[file_ptr[i + 0]]++;
-    	t1[file_ptr[i + 1]]++;
-    	t2[file_ptr[i + 2]]++;
-    	t3[file_ptr[i + 3]]++;
-    	t4[file_ptr[i + 4]]++;
-    	t5[file_ptr[i + 5]]++;
-    	t6[file_ptr[i + 6]]++;
-    	t7[file_ptr[i + 7]]++;
-  	}
+    FrequencyTable table{};
+    for (int j = 0; j < 256; ++j)
+        table[j] = t0[j] + t1[j] + t2[j] + t3[j];
 
-
-  	for (; i < file_size; ++i)
-    	t0[file_ptr[i]]++;
-
-  	FrequencyTable table{};
-  	for (int j = 0; j < 256; ++j)
-    	table[j] = t0[j] + t1[j] + t2[j] + t3[j] + t4[j] + t5[j] + t6[j] + t7[j];
-
-  	return table;
+    return table;
 	
 }

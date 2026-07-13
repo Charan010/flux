@@ -24,96 +24,111 @@ void SharedWriter::register_job(std::shared_ptr<WriterJob> job) {
   std::lock_guard lock(mtx);
   jobs[job->id] = std::move(job);
   cv.notify_one();
+  
 }
 
-void SharedWriter::notify() { cv.notify_one(); }
+void SharedWriter::notify(){
+	 cv.notify_one(); 
+}
 
-void SharedWriter::writer_loop() {
+void SharedWriter::write_chunk(WriterJob &job, const Chunk &chunk){
+	if(job.raw_output)
+		job.writer -> write_bytes(chunk.data);
 
-  while (true) {
+	else{
+		write_uint32(*job.writer, chunk.compressed_bytes);
+		write_uint32(*job.writer, chunk.bit_count);
+		job.writer -> write_bytes(chunk.data);
+	}
 
-    std::unique_lock lock(mtx);
-    cv.wait(lock, [this] { return !running || !jobs.empty(); });
+}
 
-    if (!running && jobs.empty())
-      break;
+bool SharedWriter::drain_queue(WriterJob &job, std::unique_lock<std::mutex> &lock){
 
-    bool made_progress = true;
+	bool wrote_any = false;
 
-    while (made_progress) {
+	while(true){
 
-      made_progress = false;
+		Chunk chunk;
 
-      for (auto it = jobs.begin(); it != jobs.end();) {
+		if(!job.queue -> try_pop(chunk))
+			break;
 
-        auto &job = it->second;
+		wrote_any = true;
 
-        // Drain all consecutive in-order chunks available right now
-        while (true) {
+		lock.unlock();
+		write_chunk(job, chunk);
+		lock.lock();
 
-          Chunk chunk;
-          if (!job->queue->try_pop(chunk))
-            break;
+	}
 
-          made_progress = true;
+	return wrote_any;
+}
 
-          lock.unlock();
+void SharedWriter::finish_job(WriterJob &job, std::unique_lock<std::mutex> &lock){
 
-          if (job->raw_output) {
-            job->writer->write_bytes(chunk.data);
-          } else {
-            write_uint32(*job->writer, chunk.compressed_bytes);
-            write_uint32(*job->writer, chunk.bit_count);
-            job->writer->write_bytes(chunk.data);
-          }
+	lock.lock();
 
-          lock.lock();
-        }
+	job.writer -> flush();
 
-        if (job->queue->is_done()) {
+	if(job.on_complete)
+		job.on_complete();
 
-          // Final drain after queue is closed
-          bool final_drained = false;
+	lock.unlock();
+}
 
-          while (true) {
-            Chunk chunk;
-            if (!job->queue->try_pop(chunk))
-              break;
+bool SharedWriter::process_job(WriterJob &job, std::unique_lock<std::mutex> &lock){
 
-            final_drained = true;
+	bool progress = drain_queue(job, lock);
 
-            lock.unlock();
+	if(!job.queue -> is_done())
+		return progress;
 
-            if (job->raw_output) {
-              job->writer->write_bytes(chunk.data);
-            } else {
-              write_uint32(*job->writer, chunk.compressed_bytes);
-              write_uint32(*job->writer, chunk.bit_count);
-              job->writer->write_bytes(chunk.data);
-            }
+	progress |= drain_queue(job, lock);
 
-            lock.lock();
-          }
+	finish_job(job, lock);
+	return true;
 
-          if (final_drained)
-            made_progress = true;
+}
 
-          lock.unlock();
 
-          job->writer->flush();
+void SharedWriter::writer_loop(){
 
-          if (job->on_complete)
-            job->on_complete();
+	while(true){
 
-          lock.lock();
+		std::unique_lock lock(mtx);
 
-          it = jobs.erase(it);
-          made_progress = true;
+		cv.wait(lock, [this] {
+			return !running || !jobs.empty();
+		});
 
-        } else {
-          ++it;
-        }
-      }
-    }
-  }
+		if(!running && !jobs.empty())
+			break;
+
+		bool made_progress;
+
+		do{
+			made_progress = false;
+			for(auto it = jobs.begin(); it != jobs.end(); ){
+
+				auto &job = it -> second;
+
+				if(process_job(*job, lock)){
+
+					made_progress = true;
+
+					if(job ->queue -> is_done()){
+						it = jobs.erase(it);
+						continue;
+					}
+				}
+
+				++it;
+
+			}
+
+		}while(made_progress);
+
+	}
+
 }

@@ -65,5 +65,6 @@ private:
   std::string last_error_;
   std::mutex error_mtx;
 
+  std::once_flag fail_once_;
   std::function<void(bool)> on_complete;
 };

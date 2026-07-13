@@ -8,7 +8,6 @@
 #include "lz4.h"
 
 size_t lz4_compress_bound(size_t input_size) {
-
   return input_size + (input_size / 255) + 16;
 }
 
@@ -36,8 +35,9 @@ void LZ4Engine::read_global_header(const uint8_t *data, size_t size,
   }
 
   uint8_t codec = br.read_byte();
-  if (codec != Config::CODEC_LZ4) {
+  if (codec != Config::CODEC_LZ4){  
     throw std::runtime_error("codec mismatch");
+
   }
 
   orig_size = read_uint32(br);
@@ -45,50 +45,46 @@ void LZ4Engine::read_global_header(const uint8_t *data, size_t size,
   chunk_size = read_uint32(br);
 }
 
-void LZ4Engine::encode_chunk(const uint8_t *input, size_t input_size,
-                             Chunk &output) {
-  thread_local std::vector<uint8_t> encoded;
+void LZ4Engine::encode_chunk(const uint8_t *input, size_t input_size, Chunk &output) {
+  
+	thread_local std::vector<uint8_t> encoded;
+  	encoded.clear();
 
-  encoded.clear();
+  	encoded.resize(lz4_compress_bound(input_size));
 
-  encoded.resize(lz4_compress_bound(input_size));
+  	const size_t compressed_size = lz4_compress(input, input_size, encoded.data());
+	encoded.resize(compressed_size);
 
-  const size_t compressed_size =
-      lz4_compress(input, input_size, encoded.data());
+  	output.original_size = static_cast<uint32_t>(input_size);
 
-  encoded.resize(compressed_size);
+  	output.compressed_bytes = static_cast<uint32_t>(compressed_size);
+  	output.bit_count = 0;
+  	output.data.swap(encoded);
 
-  output.original_size = static_cast<uint32_t>(input_size);
-
-  output.compressed_bytes = static_cast<uint32_t>(compressed_size);
-
-  output.bit_count = 0;
-
-  output.data.swap(encoded);
 }
 
-void LZ4Engine::decode_chunk(const uint8_t *input, size_t input_size,
-                             Chunk &output) {
-  thread_local std::vector<uint8_t> decoded;
+void LZ4Engine::decode_chunk(const uint8_t *input, size_t input_size, Chunk &output){
+	
+	thread_local std::vector<uint8_t> decoded;
+  	decoded.clear();
+  	decoded.resize(output.original_size + 8);
 
-  decoded.clear();
-  decoded.resize(output.original_size + 8); // +8 slack for 8-byte overshoot
+  	const size_t decoded_size = lz4_decompress(input, input_size, decoded.data());
 
-  const size_t decoded_size = lz4_decompress(input, input_size, decoded.data());
+  	if (decoded_size != output.original_size)
+    	throw std::runtime_error("lz4 decode size mismatch");
 
-  if (decoded_size != output.original_size)
-    throw std::runtime_error("lz4 decode size mismatch");
+  	decoded.resize(decoded_size);
+  	output.data.swap(decoded);
 
-  decoded.resize(decoded_size);
-  output.data.swap(decoded);
 }
 
 void LZ4Engine::prepare_encoder(const uint8_t *input, size_t size) {
-  (void)input;
-  (void)size;
+  	(void)input;
+  	(void)size;
 }
 
 void LZ4Engine::prepare_decoder(const uint8_t *header_data, size_t &pos) {
-  (void)header_data;
-  (void)pos;
+  	(void)header_data;
+  	(void)pos;
 }

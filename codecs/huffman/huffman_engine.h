@@ -6,7 +6,6 @@
 #include "config.h"
 #include "huffman.h"
 #include <array>
-#include <vector>
 
 class HuffmanEngine : public CodecEngine {
 public:
@@ -21,7 +20,7 @@ public:
   	void prepare_decoder(const uint8_t *header_data, size_t &pos) override;
 
   	void write_global_header(BitWriter &bw, uint32_t orig_size, uint32_t num_chunks, uint32_t chunk_size) override;
-  	void read_global_header(const uint8_t *data, size_t size, uint32_t &orig_size, uint32_t &num_chunks, 
+  	void read_global_header(const uint8_t *data, size_t size, uint32_t &orig_size, uint32_t &num_chunks,
 	uint32_t &chunk_size) override;
 
 

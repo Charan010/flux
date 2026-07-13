@@ -138,16 +138,18 @@ void CompressionJob::mark_failed(){
 
 void CompressionJob::mark_failed(std::string reason) {
 
-  std::lock_guard lock(error_mtx);
-  	if (!last_error_.empty())
-    	return;
+  std::call_once(fail_once_, [this, &reason] {
+    {
+      std::lock_guard lock(error_mtx);
+      last_error_ = std::move(reason);
+    }
 
-  	last_error_ = std::move(reason);
-  	state_ = JobState::FAILED;
+    state_ = JobState::FAILED;
 
-  	if (ordered_queue)
-		ordered_queue->close();
+    if (ordered_queue)
+      ordered_queue->close();
 
-	if (on_complete)
-    	on_complete(false);
+    if (on_complete)
+      on_complete(false);
+  });
 }

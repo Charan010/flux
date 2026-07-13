@@ -47,7 +47,7 @@ void HuffmanEngine::read_global_header(const uint8_t *data, size_t size, uint32_
 
 void HuffmanEngine::prepare_encoder(const uint8_t *data, size_t size) {
 
-  	FrequencyTable freq = compute_frequency(data, size);
+  	FrequencyTable freq = compute_frequency_parallel(data, size);
 
   	std::vector<Node> storage;
   	Node *root = build_huffman_tree(freq, storage);

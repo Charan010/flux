@@ -63,4 +63,11 @@ private:
   std::condition_variable cv;
   std::thread writer_thread;
   bool running = true;
+
+  void write_chunk(WriterJob &job, const Chunk &chunk);
+  bool drain_queue(WriterJob &job, std::unique_lock<std::mutex> &lock);
+  void finish_job(WriterJob &job, std::unique_lock<std::mutex> &lock);
+  bool process_job(WriterJob &job, std::unique_lock<std::mutex> &lock);
+
+
 };

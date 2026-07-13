@@ -81,3 +81,4 @@ void build_decode_lut(const std::array<HuffmanCode, 256> &table,
                       DecodeLUT &primary, SecondaryLUT &secondary);
 
 FrequencyTable compute_frequency(const uint8_t *file_ptr, size_t file_size);
+FrequencyTable compute_frequency_parallel(const uint8_t *data, size_t size);
