@@ -7,10 +7,15 @@ Chunker::Chunker(std::istream& input, size_t window, uint64_t base, uint64_t mas
         highestPower_ *= base_;
 }
 
+/*
+	Reads bytes until a content defined boundary is found.
+	Returns:
+		true - a complete chunk was found
+		false - no more chunks remain(chunk would be empty)
+*/
 bool Chunker::next_chunk(Chunk &chunk){
 
 	chunk.bytes.clear();
-
 	if(eof_)
 		return false;
 
@@ -41,6 +46,7 @@ bool Chunker::next_chunk(Chunk &chunk){
         rolling_hash_*= base_;
         rolling_hash_+= byte;
 
+		//returns true when found a chunk with boundary condition.
 		if((rolling_hash_ & mask_) == 0)
 			return true;
 	}

@@ -11,7 +11,7 @@ struct Chunk{
 
 class Chunker{
 public:
-	Chunker(std::istream &input, size_t window = 4, uint64_t base = 257, uint64_t mask = 0x03);
+	Chunker(std::istream &input, size_t window = 48, uint64_t base = 257, uint64_t mask = 0x1FFF);
 	bool next_chunk(Chunk &chunk);
 
 
