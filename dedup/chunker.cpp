@@ -1,54 +1,47 @@
 #include "chunker.h"
 
-Chunker::Chunker(std::istream& input, size_t window, uint64_t base, uint64_t mask): 
-	input_(input), windowSize_(window), base_(base), mask_(mask), highestPower_(1), rolling_hash_(0), eof_(false){
+Chunker::Chunker(const uint8_t *data, size_t size, size_t window,
+                  uint64_t base, uint64_t mask)
+    : data_(data), size_(size), pos_(0),
+      window_(window), base_(base), mask_(mask), highest_power_(1) {
 
-    for (size_t i = 1; i < windowSize_; i++)
-        highestPower_ *= base_;
+    for (size_t i = 1; i < window_; i++)
+        highest_power_ *= base_;
 }
 
 /*
-	Reads bytes until a content defined boundary is found.
-	Returns:
-		true - a complete chunk was found
-		false - no more chunks remain(chunk would be empty)
+ * Extracts the next content-defined chunk.
+
+ * @param chunk Recieves the extracted chunk
+ * @return true if a chunk is produced. false if the input stream ends.
+
 */
-bool Chunker::next_chunk(Chunk &chunk){
+bool Chunker::next_chunk(Chunk &chunk) {
 
-	chunk.bytes.clear();
-	if(eof_)
-		return false;
+    chunk.bytes.clear();
+    if (pos_ >= size_)
+        return false;
 
-	while(true){
+    size_t start = pos_;
+    uint64_t hash = 0;
 
-		int value = input_.get();
+    while (pos_ < size_) {
+        uint8_t incoming = data_[pos_++];
+        size_t window_len = pos_ - start;
 
-		if(value == EOF){
-			eof_ = true;
-			return !chunk.bytes.empty();
-		}
+        if (window_len <= window_) {
+            hash = hash * base_ + incoming;
+        } else {
+            uint8_t outgoing = data_[pos_ - window_ - 1];
+            hash -= outgoing * highest_power_;
+            hash *= base_;
+            hash += incoming;
+        }
 
-		uint8_t byte = static_cast<uint8_t>(value);
-		chunk.bytes.push_back(byte);
+        if (window_len >= window_ && (hash & mask_) == 0)
+            break;
+    }
 
-
-		if(window_.size() < windowSize_){
-			window_.push_back(byte);
-			rolling_hash_ = rolling_hash_ * base_ + byte;
-			continue;
-		}
-
-		uint8_t outgoing = window_.front();
-        window_.pop_front();
-        window_.push_back(byte);
-
-        rolling_hash_ -= outgoing * highestPower_;
-        rolling_hash_*= base_;
-        rolling_hash_+= byte;
-
-		//returns true when found a chunk with boundary condition.
-		if((rolling_hash_ & mask_) == 0)
-			return true;
-	}
-	return false;
+    chunk.bytes.assign(data_ + start, data_ + pos_);
+    return true;
 }

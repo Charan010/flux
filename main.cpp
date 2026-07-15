@@ -1,23 +1,54 @@
+#include <filesystem>
 #include <iostream>
 
-#include "bench.h"
-#include "coordinator.h"
-#include "daemon.h"
-#include "jobs/jobs_common.h"
+#include "dedup/dedup_engine.h"
 
-int main(int argc, char *argv[]) {
+namespace {
 
-  	Coordinator coordinator(Config::threadpool_size);
-  	constexpr size_t chunk_size = Config::chunk_size;
+void print_usage() {
+    std::cerr <<
+        "flux - deduplicating, LZ4-compressed file backup\n\n"
+        "usage:\n"
+        "  flux backup   <input-file> <manifest-file> \n"
+        "  flux restore  <manifest-file> <output-file> \n\n";
+}
 
-  	if (argc > 2 && std::string(argv[1]) == "--b"){
+} 
 
-    	Threadpool bench_pool(Config::threadpool_size);
-    	run_bench_mode(argv[2], bench_pool);
+int main(int argc, char **argv) {
 
-		return 0;
-  	} 
+    if (argc < 4) {
+        print_usage();
+        return 1;
+    }
 
-	run_daemon(coordinator, chunk_size);
-  	return 0;
+    const std::string command = argv[1];
+    const std::string first_path = argv[2];
+    const std::string second_path = argv[3];
+    const std::string store_dir = argc > 4 ? argv[4] : "store";
+
+    try {
+
+        DedupEngine engine(store_dir);
+
+        if (command == "backup") {
+            engine.backup(first_path, second_path);
+            std::cout << "backed up '" << first_path << "' -> manifest '" << second_path
+                      << "' (store: " << store_dir << ")\n";
+
+        } else if (command == "restore") {
+            engine.restore(first_path, second_path);
+            std::cout << "restored manifest '" << first_path << "' -> '" << second_path << "'\n";
+
+        } else {
+            print_usage();
+            return 1;
+        }
+
+    } catch (const std::exception &e) {
+        std::cerr << "error: " << e.what() << "\n";
+        return 1;
+    }
+
+    return 0;
 }

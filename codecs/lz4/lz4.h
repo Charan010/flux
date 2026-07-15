@@ -3,11 +3,10 @@
 #include <cstddef>
 #include <cstdint>
 
-/*
-    Returns maximum possible compressed size
-    for an input buffer of size input_size.
 
-    Used to safely preallocate output buffers.
+/*
+ * Returns the upper bound compressed size of data to pre allocate buffer memory to avoid memory
+ allocation overhead.
 */
 size_t lz4_compress_bound(size_t input_size);
 

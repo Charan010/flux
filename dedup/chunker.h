@@ -1,30 +1,30 @@
 #pragma once
 
 #include <cstdint>
-#include <deque>
-#include <istream>
 #include <vector>
 
-struct Chunk{
-	std::vector<uint8_t> bytes;
+#include "../config.h"
+
+struct Chunk {
+    std::vector<uint8_t> bytes;
 };
 
-class Chunker{
-public:
-	Chunker(std::istream &input, size_t window = 48, uint64_t base = 257, uint64_t mask = 0x1FFF);
-	bool next_chunk(Chunk &chunk);
 
+class Chunker {
+public:
+    explicit Chunker(const uint8_t *data, size_t size, size_t window = Config::chunk_window,
+		uint64_t base = Config::chunk_base,
+		uint64_t mask = Config::chunk_mask);
+	
+    bool next_chunk(Chunk &chunk);
 
 private:
-    std::istream& input_;
+    const uint8_t *data_;
+    size_t size_;
+    size_t pos_;
 
-    size_t windowSize_;
+    size_t window_;
     uint64_t base_;
     uint64_t mask_;
-    uint64_t highestPower_;
-
-    std::deque<uint8_t> window_;
-    uint64_t rolling_hash_;
-
-    bool eof_;
+    uint64_t highest_power_; 
 };
