@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "../config.h"
+#include "core/config.h"
 
 struct Chunk {
     std::vector<uint8_t> bytes;

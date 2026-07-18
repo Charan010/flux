@@ -3,7 +3,7 @@
 #include <cstdio>
 #include <stdexcept>
 
-#include "../../codecs/lz4/lz4_codec.h"
+#include "codecs/lz4/lz4_codec.h"
 
 ObjectStore::ObjectStore(const std::string &store_directory, uint64_t max_pack_size)
     : store_directory_(store_directory), packs_directory_(store_directory_ / "packs"),

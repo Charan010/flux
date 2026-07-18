@@ -4,8 +4,9 @@
 #include <fstream>
 #include <stdexcept>
 
-#include "../io/mmap_file.h"
-#include "chunker.h"
+#include "io/mmap_file.h"
+#include "chunking/chunker.h"
+
 
 DedupEngine::DedupEngine(const std::string &store_directory, size_t threads)
     : store_(store_directory), pool_(threads) {}

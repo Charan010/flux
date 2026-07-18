@@ -2,9 +2,9 @@
 
 #include <string>
 
-#include "../config.h"
-#include "../threadpool/threadpool.h"
-#include "object_store/object_store.h"
+#include "core/config.h"
+#include "threadpool/threadpool.h"
+#include "storage/object_store.h"
 
 class DedupEngine {
 

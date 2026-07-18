@@ -6,8 +6,8 @@
 #include <mutex>
 #include <string>
 
-#include "../chunker.h"
-#include "../hasher.h"
+#include "chunking/chunker.h"
+#include "hashing/hasher.h"
 #include "index.h"
 
 class ObjectStore {

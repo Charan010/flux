@@ -7,6 +7,9 @@ Index::Index(const std::filesystem::path &manifest_path) : manifest_path_(manife
     load();
 }
 
+
+
+
 bool Index::contains(const std::string &digest) const {
     return table_.find(digest) != table_.end();
 }

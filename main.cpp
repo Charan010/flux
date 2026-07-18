@@ -1,7 +1,7 @@
 #include <filesystem>
 #include <iostream>
 
-#include "dedup/dedup_engine.h"
+#include "core/dedup_engine.h"
 
 namespace {
 

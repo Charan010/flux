@@ -1,7 +1,7 @@
 #pragma once
 
 #include <string>
-#include "chunker.h"
+#include "chunking/chunker.h"
 
 class Hasher{
 public:
