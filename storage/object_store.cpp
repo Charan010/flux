@@ -7,7 +7,7 @@
 
 ObjectStore::ObjectStore(const std::string &store_directory, uint64_t max_pack_size)
     : store_directory_(store_directory), packs_directory_(store_directory_ / "packs"),
-      hasher_(), index_(store_directory_ / "index.bin"), max_pack_size_(max_pack_size),
+      index_(store_directory_ / "index.bin"), max_pack_size_(max_pack_size),
       current_pack_id_(0), current_pack_offset_(0) {
 
     std::filesystem::create_directories(packs_directory_);
@@ -80,15 +80,12 @@ bool ObjectStore::contains(const std::string &digest) const {
 
 std::string ObjectStore::store(const Chunk &chunk) {
 
-    std::string digest = hasher_.hash(chunk);
+    std::string digest = blake3_hash(chunk);
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    if (index_.find(digest) != nullptr) {
-        index_.incrementRef(digest);
-        return digest;
-    }
-
+    if (index_.find(digest) != nullptr) return digest;
+    
     std::vector<uint8_t> compressed(LZ4Codec::compress_bound(chunk.bytes.size()));
     size_t compressed_size = LZ4Codec::compress(chunk.bytes.data(), chunk.bytes.size(), compressed.data());
     compressed.resize(compressed_size);
@@ -108,7 +105,6 @@ std::string ObjectStore::store(const Chunk &chunk) {
     location.offset = offset;
     location.compressed_size = static_cast<uint32_t>(compressed.size());
     location.original_size = static_cast<uint32_t>(chunk.bytes.size());
-    location.ref_count = 1;
 
     index_.insert(digest, location);
 
@@ -151,3 +147,69 @@ void ObjectStore::save_index() const {
     std::lock_guard<std::mutex> lock(mutex_);
     index_.save();
 }
+
+uint64_t ObjectStore::compact(const std::unordered_set<std::string> &live_objects, const std::vector<uint32_t> &packs_to_compact){
+
+	std::lock_guard<std::mutex> lock(mutex_);
+
+	if(packs_to_compact.empty())
+		return 0;
+
+	const std::unordered_set<uint32_t> targets(packs_to_compact.begin(), packs_to_compact.end());
+
+	std::vector<std::string> in_targets;
+    for (const auto &[digest, loc] : index_){
+        if (targets.count(loc.pack_id))
+            in_targets.push_back(digest);
+	}
+
+	open_pack_for_append(current_pack_id_ + 1);
+	uint64_t reclaimed = 0;
+
+	for(const auto &object : in_targets){
+
+		const ObjectLocation *loc = index_.find(object); 
+		if(!loc) continue;
+
+		bool object_found = (live_objects.find(object) != live_objects.end()) ? true : false;
+
+		if(!object_found){
+			reclaimed += loc -> compressed_size;
+			index_.erase(object);
+			continue;
+		}
+
+		ObjectLocation moved = *loc;
+		std::vector<uint8_t> buf(moved.compressed_size);
+		
+		{
+			std::ifstream in(pack_path(moved.pack_id), std::ios::binary);
+
+			if(!in) throw std::runtime_error("compact: cannot open pack file" + moved.pack_id);
+
+			in.seekg(static_cast<std::streamoff>(moved.offset));
+			in.read(reinterpret_cast<char*>(buf.data()), moved.compressed_size);
+
+			if(!in) throw std::runtime_error("compact: short read from packfile" + moved.pack_id);
+
+		}
+
+		rotate_pack_if_needed(buf.size());
+		moved.pack_id = current_pack_id_;
+		moved.offset = current_pack_offset_;
+
+		current_pack_.write(reinterpret_cast<char*>(buf.data()), buf.size());
+
+		if(!current_pack_) throw std::runtime_error("compact: write to dest failed");
+		current_pack_.flush();
+		current_pack_offset_ += buf.size();
+
+		index_.insert(object, moved);
+	}
+
+	for(uint32_t id : targets)
+		std::filesystem::remove(pack_path(id));
+
+	return reclaimed;
+}
+

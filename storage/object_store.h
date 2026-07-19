@@ -5,6 +5,7 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 
 #include "chunking/chunker.h"
 #include "hashing/hasher.h"
@@ -22,12 +23,12 @@ public:
 
     bool contains(const std::string &digest) const;
     void save_index() const;
+	uint64_t compact(const std::unordered_set<std::string> &live_objects, const std::vector<uint32_t> &packs_to_compact);
 
 private:
     std::filesystem::path store_directory_;
     std::filesystem::path packs_directory_;
 
-    Hasher hasher_;
     Index index_;
     mutable std::mutex mutex_;
 

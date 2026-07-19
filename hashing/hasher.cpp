@@ -5,7 +5,7 @@
 #include <sstream>
 
 
-std::string Hasher::hash(const Chunk &chunk) const{
+std::string blake3_hash(const Chunk &chunk){
 
 	blake3_hasher hasher;
 	blake3_hasher_init(&hasher);

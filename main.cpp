@@ -33,7 +33,7 @@ int main(int argc, char **argv) {
 
         if (command == "backup") {
             engine.backup(first_path, second_path);
-            std::cout << "backed up '" << first_path << "' -> manifest '" << second_path
+			std::cout << "backed up '" << first_path << "' -> manifest '" << second_path
                       << "' (store: " << store_dir << ")\n";
 
         } else if (command == "restore") {

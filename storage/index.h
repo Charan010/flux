@@ -10,7 +10,6 @@ struct ObjectLocation {
     uint64_t offset;
     uint32_t compressed_size; 
     uint32_t original_size;   
-    uint32_t ref_count;
 };
 
 class Index {
@@ -22,9 +21,6 @@ public:
 
     const ObjectLocation *find(const std::string &digest) const;
     void insert(const std::string &digest, const ObjectLocation &object_location);
-
-    void incrementRef(const std::string &digest);
-    void decrementRef(const std::string &digest);
 
     void erase(const std::string &digest);
     void load();
