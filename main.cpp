@@ -1,53 +1,63 @@
-#include <filesystem>
 #include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
+#include <iterator>
 
 #include "core/dedup_engine.h"
 
 namespace {
 
-void print_usage() {
-    std::cerr <<
-        "flux - deduplicating, LZ4-compressed file backup\n\n"
-        "usage:\n"
-        "  flux backup   <input-file> <manifest-file> \n"
-        "  flux restore  <manifest-file> <output-file> \n\n";
+void print_help() {
+    std::cout <<
+        "relic - deduplicating, LZ4-compressed dataset versioning\n\n"
+        "  backup  <input> <manifest-name>   store a snapshot\n"
+        "  restore <manifest-name> <output>  materialize a snapshot\n"
+        "  gc      [--dry-run]               reclaim unreferenced space\n"
+        "  help                              show this help\n"
+        "  exit                              leave\n\n";
+}
+
+std::vector<std::string> split(const std::string &line) {
+    std::istringstream iss(line);
+    return {std::istream_iterator<std::string>(iss), std::istream_iterator<std::string>()};
 }
 
 } 
-
 int main(int argc, char **argv) {
+    const std::string store = argc > 1 ? argv[1] : "store";
+    DedupEngine engine(store);
+    print_help();
 
-    if (argc < 4) {
-        print_usage();
-        return 1;
-    }
+    std::string line;
+    while (std::cout << "relic> " << std::flush, std::getline(std::cin, line)){
 
-    const std::string command = argv[1];
-    const std::string first_path = argv[2];
-    const std::string second_path = argv[3];
-    const std::string store_dir = argc > 4 ? argv[4] : "store";
+        const auto args = split(line);
+        if (args.empty()) continue;
 
-    try {
+        const std::string &cmd = args[0];
+        if (cmd == "exit" || cmd == "quit") break;
 
-        DedupEngine engine(store_dir);
+        try {
 
-        if (command == "backup") {
-            engine.backup(first_path, second_path);
-			std::cout << "backed up '" << first_path << "' -> manifest '" << second_path
-                      << "' (store: " << store_dir << ")\n";
+            if (cmd == "help")
+                print_help();
 
-        } else if (command == "restore") {
-            engine.restore(first_path, second_path);
-            std::cout << "restored manifest '" << first_path << "' -> '" << second_path << "'\n";
+            else if (cmd == "backup" && args.size() >= 3)
+                engine.backup(args[1], args[2]);
 
-        } else {
-            print_usage();
-            return 1;
+            else if (cmd == "restore" && args.size() >= 3)
+                engine.restore(args[1], args[2]);
+
+            else if (cmd == "gc")
+                engine.gc(args.size() > 1 && args[1] == "--dry-run");
+            
+			else
+                std::cout << "bad command or args (try 'help')\n";
+        } 
+		catch (const std::exception &e) {
+			std::cerr << "error: " << e.what() << "\n";
         }
-
-    } catch (const std::exception &e) {
-        std::cerr << "error: " << e.what() << "\n";
-        return 1;
     }
 
     return 0;
