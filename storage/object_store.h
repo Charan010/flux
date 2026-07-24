@@ -6,6 +6,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_set>
+#include <vector>
 
 #include "chunking/chunker.h"
 #include "hashing/hasher.h"
@@ -14,27 +15,26 @@
 class ObjectStore {
 
 public:
-    explicit ObjectStore(const std::string &store_directory = "store", uint64_t max_pack_size = 256ull * 1024 * 1024);
+    explicit ObjectStore(const std::string &store_directory = "store",
+                         uint64_t max_pack_size = 256ull * 1024 * 1024);
     ~ObjectStore();
 
-
-
-
     std::string store(const Chunk &chunk);
-
     Chunk load(const std::string &digest) const;
 
     bool contains(const std::string &digest) const;
     void save_index() const;
-	const Index &index() const {return index_; }
 
-	uint64_t compact(const std::unordered_set<std::string> &live_objects, const std::vector<uint32_t> &packs_to_compact);
+    const Index &index() const { return index_; }
+
+    uint64_t compact(const std::unordered_set<std::string> &live_objects,
+                     const std::vector<uint32_t> &packs_to_compact);
 
 private:
 
-	Index index_;
     std::filesystem::path store_directory_;
     std::filesystem::path packs_directory_;
+    Index index_;
 
     mutable std::mutex mutex_;
 

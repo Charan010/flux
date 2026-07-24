@@ -3,6 +3,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -32,4 +33,7 @@ private:
   size_t active_workers = 0;
 
   std::atomic_bool stop{false};
+
+  std::mutex err_mtx;
+  std::exception_ptr first_error;
 };

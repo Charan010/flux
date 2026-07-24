@@ -5,11 +5,14 @@
 #include <string>
 #include <unordered_map>
 
+#include "codecs/codec.h"
+
 struct ObjectLocation {
     uint32_t pack_id;
     uint64_t offset;
-    uint32_t compressed_size; 
-    uint32_t original_size;   
+    uint32_t compressed_size;   
+    uint32_t original_size;     
+    CodecId  codec;             
 };
 
 class Index {
@@ -26,13 +29,8 @@ public:
     void load();
     void save() const;
 
-	auto begin() const{
-		 return table_.begin(); 
-	}
-	
-    auto end()const{
-		return table_.end(); 
-	}
+    auto begin() const { return table_.begin(); }
+    auto end()   const { return table_.end();   }
 
 private:
     std::filesystem::path manifest_path_;

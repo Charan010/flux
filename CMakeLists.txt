@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(
-    Flux
+    Relic
     VERSION 1.0
     LANGUAGES CXX
 )
@@ -10,7 +10,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_executable(flux
+find_package(Threads REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ZSTD REQUIRED libzstd)
+
+# The target must be created before any target_* command can configure it.
+add_executable(relic
     main.cpp
     core/dedup_engine.cpp
     chunking/chunker.cpp
@@ -20,14 +25,16 @@ add_executable(flux
     gc/gc.cpp
     io/mmap_file.cpp
     threadpool/threadpool.cpp
-    codecs/lz4/lz4.cpp
+    codecs/codec.cpp
+    codecs/lz4/lz4.cpp        # still built, no longer on the store path
 )
 
-target_include_directories(flux PRIVATE
+target_include_directories(relic PRIVATE
     ${PROJECT_SOURCE_DIR}
+    ${ZSTD_INCLUDE_DIRS}
 )
 
-target_compile_options(flux PRIVATE
+target_compile_options(relic PRIVATE
     -Wall
     -Wextra
     -Wpedantic
@@ -35,14 +42,13 @@ target_compile_options(flux PRIVATE
     -Wconversion
 )
 
-target_compile_options(flux PRIVATE
+target_compile_options(relic PRIVATE
     $<$<CONFIG:Release>:-O3;-march=native;-DNDEBUG>
     $<$<CONFIG:Debug>:-O0;-g3>
 )
 
-find_package(Threads REQUIRED)
-
-target_link_libraries(flux PRIVATE
+target_link_libraries(relic PRIVATE
     Threads::Threads
     blake3
+    ${ZSTD_LIBRARIES}
 )

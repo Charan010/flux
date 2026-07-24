@@ -34,8 +34,18 @@ void Threadpool::shutdown() {
 }
 
 void Threadpool::wait() {
-  std::unique_lock<std::mutex> lock(mtx);
-  cv_done.wait(lock, [this]() { return jobs.empty() && active_workers == 0; });
+  {
+    std::unique_lock<std::mutex> lock(mtx);
+    cv_done.wait(lock, [this]() { return jobs.empty() && active_workers == 0; });
+  }
+
+  std::exception_ptr err;
+  {
+    std::lock_guard<std::mutex> err_lock(err_mtx);
+    std::swap(err, first_error);
+  }
+  if (err)
+    std::rethrow_exception(err);
 }
 
 void Threadpool::worker_loop() {
@@ -46,14 +56,19 @@ void Threadpool::worker_loop() {
     if (stop.load() && jobs.empty())
       return;
 
-
     auto job = std::move(jobs.back());
     jobs.pop_back();
 
     ++active_workers;
     lock.unlock();
 
-    job();
+    try {
+      job();
+    } catch (...) {
+      std::lock_guard<std::mutex> err_lock(err_mtx);
+      if (!first_error)
+        first_error = std::current_exception();
+    }
 
     lock.lock();
     --active_workers;

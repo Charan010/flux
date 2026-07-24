@@ -7,7 +7,6 @@ Index::Index(const std::filesystem::path &manifest_path) : manifest_path_(manife
     load();
 }
 
-
 bool Index::contains(const std::string &digest) const {
     return table_.find(digest) != table_.end();
 }
@@ -20,7 +19,6 @@ const ObjectLocation *Index::find(const std::string &digest) const {
 void Index::insert(const std::string &digest, const ObjectLocation &location) {
     table_[digest] = location;
 }
-
 
 void Index::erase(const std::string &digest) {
     table_.erase(digest);
@@ -45,6 +43,7 @@ void Index::save() const {
         out.write(reinterpret_cast<const char *>(&loc.offset), sizeof(loc.offset));
         out.write(reinterpret_cast<const char *>(&loc.compressed_size), sizeof(loc.compressed_size));
         out.write(reinterpret_cast<const char *>(&loc.original_size), sizeof(loc.original_size));
+        out.write(reinterpret_cast<const char *>(&loc.codec), sizeof(loc.codec));
     }
 }
 
@@ -68,11 +67,12 @@ void Index::load() {
         std::string digest(len, '\0');
         in.read(digest.data(), len);
 
-        ObjectLocation loc{}; 
+        ObjectLocation loc{};
         in.read(reinterpret_cast<char *>(&loc.pack_id), sizeof(loc.pack_id));
         in.read(reinterpret_cast<char *>(&loc.offset), sizeof(loc.offset));
         in.read(reinterpret_cast<char *>(&loc.compressed_size), sizeof(loc.compressed_size));
         in.read(reinterpret_cast<char *>(&loc.original_size), sizeof(loc.original_size));
+        in.read(reinterpret_cast<char *>(&loc.codec), sizeof(loc.codec));
 
         table_[digest] = loc;
     }
