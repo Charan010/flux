@@ -14,7 +14,6 @@ find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ZSTD REQUIRED libzstd)
 
-# The target must be created before any target_* command can configure it.
 add_executable(relic
     main.cpp
     core/dedup_engine.cpp
@@ -26,7 +25,7 @@ add_executable(relic
     io/mmap_file.cpp
     threadpool/threadpool.cpp
     codecs/codec.cpp
-    codecs/lz4/lz4.cpp        # still built, no longer on the store path
+    codecs/lz4/lz4.cpp    
 )
 
 target_include_directories(relic PRIVATE

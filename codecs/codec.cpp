@@ -10,8 +10,8 @@
 namespace {
 
 constexpr int kZstdLevel = 3;   
-
-constexpr size_t kMinSavingsDivisor = 20;   
+constexpr size_t kMinSavingsDivisor = 20;
+   
 
 struct CCtxDeleter{
 	 void operator()(ZSTD_CCtx *p)const{
