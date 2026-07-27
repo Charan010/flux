@@ -18,6 +18,7 @@ struct ObjectLocation {
 class Index {
 
 public:
+
     explicit Index(const std::filesystem::path &manifest_path = "manifest.bin");
 
     bool contains(const std::string &digest) const;
@@ -29,10 +30,16 @@ public:
     void load();
     void save() const;
 
-    auto begin() const { return table_.begin(); }
-    auto end()   const { return table_.end();   }
+    auto begin()const{
+		 return table_.begin(); 
+	}
+
+    auto end()const{
+		return table_.end();   
+	}
 
 private:
+
     std::filesystem::path manifest_path_;
     std::unordered_map<std::string, ObjectLocation> table_;
 };

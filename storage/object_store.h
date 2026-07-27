@@ -34,6 +34,10 @@ private:
 
     std::filesystem::path store_directory_;
     std::filesystem::path packs_directory_;
+	
+	//exclusive lock for using store directory.
+	int lock_fd_  = -1;
+
     Index index_;
 
     mutable std::mutex mutex_;

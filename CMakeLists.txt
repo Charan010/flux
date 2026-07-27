@@ -26,6 +26,7 @@ add_executable(relic
     threadpool/threadpool.cpp
     codecs/codec.cpp
     codecs/lz4/lz4.cpp    
+	bench.cpp
 )
 
 target_include_directories(relic PRIVATE

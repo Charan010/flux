@@ -5,6 +5,11 @@
 #include <string>
 #include <vector>
 
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+
+
 #include "codecs/codec.h"
 
 ObjectStore::ObjectStore(const std::string &store_directory, uint64_t max_pack_size)
@@ -12,10 +17,25 @@ ObjectStore::ObjectStore(const std::string &store_directory, uint64_t max_pack_s
       index_(store_directory_ / "index.bin"), max_pack_size_(max_pack_size),
       current_pack_id_(0), current_pack_offset_(0) {
 
-    std::filesystem::create_directories(packs_directory_);
+	std::filesystem::create_directories(packs_directory_);
 
-    current_pack_id_ = find_latest_packId();
-    open_pack_for_append(current_pack_id_);
+	const std::filesystem::path lock_path = store_directory_ / ".lock";
+
+	lock_fd_ = open(lock_path.c_str(), O_CREAT | O_RDWR, 0644);
+	
+	if(lock_fd_ < 0)
+		throw std::runtime_error("cannot open store lock: " + lock_path.string());
+
+	if(flock(lock_fd_, LOCK_EX | LOCK_NB ) != 0){
+
+		close(lock_fd_);
+		lock_fd_ = -1;
+		throw std::runtime_error("store is already in use by another relic instance.");
+	}
+
+	current_pack_id_ = find_latest_packId();
+	open_pack_for_append(current_pack_id_);
+	
 }
 
 ObjectStore::~ObjectStore() {
@@ -23,6 +43,9 @@ ObjectStore::~ObjectStore() {
         current_pack_.flush();
 
     save_index();
+
+	if(lock_fd_ >= 0)
+		close(lock_fd_);	
 }
 
 std::filesystem::path ObjectStore::pack_path(uint32_t pack_id) const {

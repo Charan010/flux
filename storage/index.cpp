@@ -5,7 +5,7 @@
 
 Index::Index(const std::filesystem::path &manifest_path) : manifest_path_(manifest_path) {
     load();
-}
+}	
 
 bool Index::contains(const std::string &digest) const {
     return table_.find(digest) != table_.end();
@@ -18,7 +18,7 @@ const ObjectLocation *Index::find(const std::string &digest) const {
 
 void Index::insert(const std::string &digest, const ObjectLocation &location) {
     table_[digest] = location;
-}
+}	
 
 void Index::erase(const std::string &digest) {
     table_.erase(digest);
