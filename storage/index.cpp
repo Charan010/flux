@@ -27,6 +27,7 @@ void Index::erase(const std::string &digest) {
 void Index::save() const {
 
     std::ofstream out(manifest_path_, std::ios::binary);
+	
     if (!out)
         throw std::runtime_error("Failed to save manifest.");
 

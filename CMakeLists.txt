@@ -27,6 +27,7 @@ add_executable(relic
     codecs/codec.cpp
     codecs/lz4/lz4.cpp    
 	bench.cpp
+	dedup_bench.cpp
 )
 
 target_include_directories(relic PRIVATE

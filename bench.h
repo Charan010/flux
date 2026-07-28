@@ -1,8 +1,10 @@
 #pragma once
 
-#include <cstddef>
 #include <string>
 
-/*Self-test: generates a small corpus with known redundancy (a duplicated file with log kind of data)
- TO-DO: replace this with actual dataset with proper results. */
-void run_bench(const std::string &store, std::size_t size_mb);
+
+class DedupEngine;
+
+/* Backs up Silesia dataset which consists of all kinds of data to test the deduplication and compression and
+   correctness of the backup tool with proper metrics. */
+void run_bench(DedupEngine &engine,std::string store, const std::string &corpus_path);

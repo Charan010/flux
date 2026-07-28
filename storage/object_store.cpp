@@ -91,7 +91,8 @@ void ObjectStore::open_pack_for_append(uint32_t pack_id) {
     current_pack_id_ = pack_id;
 }
 
-void ObjectStore::rotate_pack_if_needed(uint64_t incoming_size) {
+void ObjectStore::rotate_pack_if_needed(uint64_t incoming_size){
+
     if (current_pack_offset_ + incoming_size <= max_pack_size_)
         return;
 
@@ -137,13 +138,14 @@ std::string ObjectStore::store(const Chunk &chunk) {
     location.codec = codec;
 
     index_.insert(digest, location);
-
     return digest;
+
 }
 
 Chunk ObjectStore::load(const std::string &digest) const {
 
     ObjectLocation location;
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
         const ObjectLocation *found = index_.find(digest);
@@ -155,9 +157,12 @@ Chunk ObjectStore::load(const std::string &digest) const {
             current_pack_.flush();
     }
 
+
     std::ifstream in(pack_path(location.pack_id), std::ios::binary);
+
     if (!in)
         throw std::runtime_error("Failed to open pack file for digest: " + digest);
+
 
     in.seekg(static_cast<std::streamoff>(location.offset));
 
@@ -180,9 +185,8 @@ void ObjectStore::save_index() const {
     index_.save();
 }
 
-uint64_t ObjectStore::compact(const std::unordered_set<std::string> &live_objects,
-                              const std::vector<uint32_t> &packs_to_compact) {
-
+uint64_t ObjectStore::compact(const std::unordered_set<std::string> &live_objects, const std::vector<uint32_t> &packs_to_compact) {
+	
     std::lock_guard<std::mutex> lock(mutex_);
 
     if (packs_to_compact.empty())
@@ -191,7 +195,8 @@ uint64_t ObjectStore::compact(const std::unordered_set<std::string> &live_object
     const std::unordered_set<uint32_t> targets(packs_to_compact.begin(), packs_to_compact.end());
 
     std::vector<std::string> in_targets;
-    for (const auto &[digest, loc] : index_) {
+
+    for (const auto &[digest, loc] : index_){
         if (targets.count(loc.pack_id))
             in_targets.push_back(digest);
     }
@@ -202,6 +207,7 @@ uint64_t ObjectStore::compact(const std::unordered_set<std::string> &live_object
     for (const auto &object : in_targets) {
 
         const ObjectLocation *loc = index_.find(object);
+
         if (!loc)
             continue;
 
@@ -217,15 +223,13 @@ uint64_t ObjectStore::compact(const std::unordered_set<std::string> &live_object
         {
             std::ifstream in(pack_path(moved.pack_id), std::ios::binary);
             if (!in)
-                throw std::runtime_error("compact: cannot open pack file "
-                                         + std::to_string(moved.pack_id));
+                throw std::runtime_error("compact: cannot open pack file " + std::to_string(moved.pack_id));
 
             in.seekg(static_cast<std::streamoff>(moved.offset));
             in.read(reinterpret_cast<char *>(buf.data()), moved.compressed_size);
 
             if (!in)
-                throw std::runtime_error("compact: short read from pack file "
-                                         + std::to_string(moved.pack_id));
+                throw std::runtime_error("compact: short read from pack file "+ std::to_string(moved.pack_id));
         }
 
         rotate_pack_if_needed(buf.size());
@@ -249,6 +253,5 @@ uint64_t ObjectStore::compact(const std::unordered_set<std::string> &live_object
         std::filesystem::remove(pack_path(id));
 
     index_.save();
-
     return reclaimed;
 }

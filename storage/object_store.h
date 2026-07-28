@@ -15,8 +15,8 @@
 class ObjectStore {
 
 public:
-    explicit ObjectStore(const std::string &store_directory = "store",
-                         uint64_t max_pack_size = 256ull * 1024 * 1024);
+    explicit ObjectStore(const std::string &store_directory = "store", 
+						uint64_t max_pack_size = 256ull * 1024 * 1024);
     ~ObjectStore();
 
     std::string store(const Chunk &chunk);
@@ -27,15 +27,17 @@ public:
 
     const Index &index() const { return index_; }
 
-    uint64_t compact(const std::unordered_set<std::string> &live_objects,
-                     const std::vector<uint32_t> &packs_to_compact);
+    uint64_t compact(const std::unordered_set<std::string> &live_objects, 
+					const std::vector<uint32_t> &packs_to_compact);
 
 private:
 
     std::filesystem::path store_directory_;
     std::filesystem::path packs_directory_;
 	
-	//exclusive lock for using store directory.
+	/* exclusive lock to hold store directory. only one process can access store/ to prevent race conditions or corrupt data from multiple 
+		instances.
+	*/
 	int lock_fd_  = -1;
 
     Index index_;
