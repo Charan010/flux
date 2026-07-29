@@ -24,6 +24,12 @@ struct GcReport {
     uint64_t total_live_bytes      = 0;
     uint64_t total_garbage_bytes   = 0;
     std::unordered_map<uint32_t, PackStats> per_pack;
+
+    /* Digests referenced by a manifest but absent from the index. Non-empty means
+       the store is already corrupt: a snapshot cannot be restored. Compaction must
+       refuse to run, because sweeping on top of corruption destroys evidence. */
+    std::vector<std::string> dangling;
+	
 };
 
 class GcScanner{

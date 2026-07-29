@@ -29,6 +29,8 @@ namespace {
 		for(const auto &e : fs::recursive_directory_iterator(packs))
 			if(e.is_regular_file()) total += e.file_size();
 
+		return total;
+
 	}
 
 	inline double convert_to_kb(uint64_t bytes){

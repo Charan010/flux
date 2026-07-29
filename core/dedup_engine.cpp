@@ -26,6 +26,11 @@ fs::path DedupEngine::manifest_path(const std::string &name) const {
     return manifests_dir_ / fs::path(name).filename();
 }
 
+
+/* 
+It backups the file using content-defined chunking and storing new chunks in disk and updating index.
+//TO-DO: threadpool parallelism should be implemented for file wise instead of chunks. 
+*/
 std::vector<std::string> DedupEngine::store_file(const fs::path &file) {
 
     if (fs::file_size(file) == 0)
@@ -35,6 +40,7 @@ std::vector<std::string> DedupEngine::store_file(const fs::path &file) {
     Chunker chunker(mapped.data(), mapped.size());
 
     std::vector<Chunk> chunks;
+
     Chunk chunk;
     while (chunker.next_chunk(chunk))
         chunks.push_back(std::move(chunk));
@@ -43,7 +49,9 @@ std::vector<std::string> DedupEngine::store_file(const fs::path &file) {
     for (size_t i = 0; i < chunks.size(); ++i)
         pool_.submit([this, &chunks, &digests, i] {
             digests[i] = store_.store(chunks[i]);
-        });
+    });
+
+
     pool_.wait();
 
     return digests;
@@ -69,8 +77,9 @@ void DedupEngine::backup(const std::string &input_path, const std::string &manif
 
     // recursive_directory_iterator gives no ordering guarantee; sort so an
     // unchanged tree always produces a byte-identical manifest.
-    std::sort(targets.begin(), targets.end(),
-              [](const auto &a, const auto &b) { return a.second < b.second; });
+    std::sort(targets.begin(), targets.end(), [](const auto &a, const auto &b){
+		 return a.second < b.second; 
+	});
 
     json manifest;
     manifest["is_directory"] = is_directory;
@@ -84,12 +93,29 @@ void DedupEngine::backup(const std::string &input_path, const std::string &manif
             {"chunks", store_file(path)},
         });
 
-    std::ofstream out(manifest_path(manifest_name));
-    if (!out)
-        throw std::runtime_error("failed to write manifest: " + manifest_name);
-
-    out << manifest.dump(2);
+    /* The index must be durable before the manifest that references it becomes
+       visible. Reverse that order and a crash in between leaves a snapshot whose
+       chunks the index has never heard of -- GC would then see dangling refs, and
+       restore would fail. Index first, manifest second, manifest published by
+       rename so a partial write is never observable. */
     store_.save_index();
+
+    const fs::path final_path = manifest_path(manifest_name);
+    const fs::path temp_path  = final_path.string() + ".tmp";
+
+    {
+        std::ofstream out(temp_path);
+        if (!out)
+            throw std::runtime_error("failed to write manifest: " + manifest_name);
+
+        out << manifest.dump(2);
+        out.flush();
+
+        if (!out)
+            throw std::runtime_error("failed to write manifest: " + manifest_name);
+    }
+
+    fs::rename(temp_path, final_path);
 }
 
 void DedupEngine::restore(const std::string &manifest_name, const std::string &output_path) const {
@@ -151,6 +177,14 @@ void DedupEngine::gc(bool dry_run) {
               << report.total_live_objects << " live, "
               << report.total_garbage_objects << " garbage ("
               << report.total_garbage_bytes << " bytes reclaimable)\n";
+
+    if (!report.dangling.empty()) {
+        std::cout << "gc: " << report.dangling.size()
+                  << " object(s) referenced by a manifest are missing from the index.\n"
+                     "gc: the store is corrupt and at least one snapshot cannot be"
+                     " restored; refusing to compact.\n";
+        return;
+    }
 
     if (packs.empty()) {
         std::cout << "gc: nothing to compact\n";

@@ -28,7 +28,7 @@ void print_help() {
         "  backup  <path> <name>    snapshot a file or directory\n"
         "  restore <name> <path>    materialize a snapshot\n"
         "  list                     show stored snapshots\n"
-        "  gc [--dry-run]           reclaim space from deleted snapshots\n"
+        "  gc [--dry-run]           reclaim space from deleted snapshots\n" 
         "  benchmark [path]         backup + restore + verify a directory\n"
 		"  dedup-bench [path]       measure deduplication: store growth per snapshot\n"
         "  help                     show this help\n"

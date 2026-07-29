@@ -16,9 +16,11 @@ public:
   size_t size() const { return file_size; }
 
 private:
+
   void map_file(const std::string &path);
 
   int fd{-1};
   const uint8_t *file_ptr{nullptr};
   size_t file_size{0};
+  
 };

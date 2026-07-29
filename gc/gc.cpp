@@ -4,36 +4,66 @@
 #include <fstream>
 #include <stdexcept>
 
-GcScanner::GcScanner(const Index &index) : index_(index) {}
+#include "json.hpp"
 
-std::unordered_set<std::string>GcScanner::collect_live_objects(const std::filesystem::path &manifest_dir) const {
-    
+using json = nlohmann::json;
+
+
+GcScanner::GcScanner(const Index &index): index_(index) {}
+
+
+std::unordered_set<std::string> GcScanner::collect_live_objects(const std::filesystem::path &manifest_dir) const{
+
 	std::unordered_set<std::string> live;
 
-    if (!std::filesystem::exists(manifest_dir))
-        return live;
+	if(!std::filesystem::exists(manifest_dir))
+		return live;
 
-	
-	/* Iterates across all manifest files and stores all the objects referenced into a set. Mark and sweep garbage collection
-	   allows to accurately count what objects are being chunks even mid crash.
-	*/
-    for (const auto &entry : std::filesystem::directory_iterator(manifest_dir)) {
-        if (!entry.is_regular_file())
-            continue;
+	for(const auto &entry: std::filesystem::recursive_directory_iterator(manifest_dir)){
 
-        std::ifstream manifest(entry.path());
-        if (!manifest)
-            throw std::runtime_error("gc: cannot read manifest: " + entry.path().string());
+		if(!entry.is_regular_file() || entry.path().extension() == ".tmp")
+			continue;
 
-        std::string digest;
-        while (std::getline(manifest, digest))
-            if (!digest.empty())
-                live.insert(digest); 
+		const std::string where = entry.path().string();
+
+		std::ifstream in(entry.path());
+		if(!in)
+			throw std::runtime_error("gc: cannot read manifest" + where);
+
+		json manifest;
+
+		try{ in >> manifest; }
+		catch(const json::exception &e){
+			throw std::runtime_error("gc: malformed manifest " + where + " :" + e.what());
+		}
+
+  		const auto files = manifest.find("files");
+        if (files == manifest.end() || !files->is_array())
+            throw std::runtime_error("gc: manifest missing 'files' array: " + where);
+
+        for (const auto &file : *files) {
+
+            const auto chunks = file.find("chunks");
+            if (chunks == file.end() || !chunks->is_array())
+                throw std::runtime_error("gc: manifest entry missing 'chunks' array: " + where);
+
+            for (const auto &digest : *chunks) {
+
+                if (!digest.is_string())
+                    throw std::runtime_error("gc: non-string digest in manifest: " + where);
+
+                live.insert(digest.get<std::string>());
+            }
+        }
     }
 
     return live;
 }
 
+
+/* Walks through all live objects and keeps track of stats like how many live bytes exist in each packfile.
+	Garbage collection gets triggered for a packfile when dead bytes percentage reaches x threshold.
+*/
 GcReport GcScanner::analyze(const std::unordered_set<std::string> &live_objects) const{
 
 	GcReport report;
@@ -62,9 +92,18 @@ GcReport GcScanner::analyze(const std::unordered_set<std::string> &live_objects)
 		}
 	}
 
+	/* A digest a manifest points at but the index has never heard of. This is the
+	   inverse direction of the sweep and it is cheap, so check it: it is the only
+	   signal that a snapshot has already become unrestorable. */
+	for (const auto &digest : live_objects)
+		if (index_.find(digest) == nullptr)
+			report.dangling.push_back(digest);
+
 	return report;
 }
 
+
+/* Returns list of packfiles which has > x% of dead bytes so that packfiles can be compacted.*/
 std::vector<uint32_t> GcScanner::select_packs_for_compaction(const GcReport &report, double min_garbage_ratio) const{
 
 	std::vector<std::pair<uint32_t, double>> candidates;
@@ -76,6 +115,7 @@ std::vector<uint32_t> GcScanner::select_packs_for_compaction(const GcReport &rep
             continue;
 
         const double ratio = static_cast<double>(stats.garbage_bytes) / static_cast<double>(total);
+
         if (ratio >= min_garbage_ratio)
             candidates.emplace_back(pack_id, ratio);
     }
@@ -85,10 +125,10 @@ std::vector<uint32_t> GcScanner::select_packs_for_compaction(const GcReport &rep
 
     std::vector<uint32_t> packs;
     packs.reserve(candidates.size());
+
     for (const auto &[pack_id, _] : candidates)
         packs.push_back(pack_id);
 
     return packs;
 
 }
-

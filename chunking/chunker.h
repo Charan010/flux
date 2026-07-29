@@ -26,5 +26,6 @@ private:
     size_t window_;
     uint64_t base_;
     uint64_t mask_;
-    uint64_t highest_power_; 
+    uint64_t highest_power_;
+	
 };

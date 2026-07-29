@@ -8,11 +8,9 @@
 
 MappedFile::MappedFile(const std::string &path) { map_file(path); }
 
-MappedFile::~MappedFile() {
-  	if (file_ptr)
-    	munmap(const_cast<uint8_t *>(file_ptr), file_size);
-  	if (fd >= 0)
-    	close(fd);
+MappedFile::~MappedFile(){
+  	if(file_ptr) munmap(const_cast<uint8_t *>(file_ptr), file_size);
+  	if(fd >= 0) close(fd);
 }
 
 void MappedFile::map_file(const std::string &input_file) {
