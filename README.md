@@ -1,21 +1,13 @@
 # relic
 
-Deduplicating snapshot storage with compression. relic backs up files and
-directories, storing only data it hasn't seen before, so keeping many versions
-of slowly-changing data costs little extra space. Any snapshot can be restored
-exactly.
+Stores compressed, deduplicated snapshots of files and directories saving only new data. This keeps incremental backups space efficient while allowing any snapshot to be restored.
 
 ## How it works
 
-Files are split into variable-sized chunks by content-defined chunking (a
-rolling hash chooses the boundaries). Each chunk is identified by its BLAKE3
-hash; a chunk is stored only if that hash is not already present, so identical
-data — across files or across snapshots — is stored once. Stored chunks are
-compressed with zstd (level 3), with a raw fallback for data that does not
-compress.
+Files are split into variable size chunks using content-defined chunking. Chunks are identified by BLAKE3 hash and duplicate chunks are stored only once and chunks are compressed with zstd.
 
-Deleting a snapshot leaves chunks that nothing references. Garbage collection
-reclaims them with a mark-and-sweep pass over the live snapshots.
+When a snapshot is deleted, some chunks are not used by any of the snapshots. Mark and sweep garbage collector removes the unreferenced chunks to reclaim space.
+
 
 ## Build
 
@@ -48,7 +40,7 @@ relic> dedup-bench [path]      measure deduplication: store growth per snapshot
 This benchmark measures deduplication efficiency by backing up mostly identical snapshots with minimal changes and recording the additional storage consumed. Its sole focus is deduplication.
 
 ```
-action                     logical (MB)   stored (MB)   saved %
+action                     Actual size(MB)   Stored size (MB)   Saved %
 ---------------------------------------------------------------
 first backup                     200.43         77.30      61.4
 re-backup, unchanged             200.43          0.00     100.0
@@ -58,9 +50,6 @@ backup 2 identical copies        400.85          0.00     100.0
 total (4 snapshots)             1002.19         77.42      92.3
 ```
 
-Logical is the original data size; stored is what relic actually wrote
-(compressed and deduplicated). A 64 KB random edit added 0.06 MB — the change
-is stored, not the file it lives in. Reproduce with `dedup-bench <corpus>`.
 
 ## Limitations
 

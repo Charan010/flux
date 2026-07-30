@@ -11,6 +11,7 @@
 
 
 struct PackStats{
+
 	uint64_t live_objects = 0;
 	uint64_t garbage_objects = 0;
 	uint64_t live_bytes = 0;
@@ -25,9 +26,9 @@ struct GcReport {
     uint64_t total_garbage_bytes   = 0;
     std::unordered_map<uint32_t, PackStats> per_pack;
 
-    /* Digests referenced by a manifest but absent from the index. Non-empty means
-       the store is already corrupt: a snapshot cannot be restored. Compaction must
-       refuse to run, because sweeping on top of corruption destroys evidence. */
+    /* Chunks which are referenced by manifests but actually not present in the index_ so these are just stored
+		in this vector instead of trying to delete something which doesnt exist.
+	*/
     std::vector<std::string> dangling;
 	
 };
@@ -43,4 +44,5 @@ public:
 
 private:
 	const Index &index_;
+
 };

@@ -10,6 +10,7 @@
 
 #include "chunking/chunker.h"
 #include "hashing/hasher.h"
+#include "hashing/digest.h"
 #include "index.h"
 
 class ObjectStore {
@@ -19,15 +20,15 @@ public:
 						uint64_t max_pack_size = 256ull * 1024 * 1024);
     ~ObjectStore();
 
-    std::string store(const Chunk &chunk);
-    Chunk load(const std::string &digest) const;
+    Digest store(const Chunk &chunk);
+    Chunk load(const Digest &digest) const;
 
-    bool contains(const std::string &digest) const;
+    bool contains(const Digest &digest) const;
     void save_index() const;
 
     const Index &index() const { return index_; }
 
-    uint64_t compact(const std::unordered_set<std::string> &live_objects, 
+    uint64_t compact(const std::unordered_set<Digest, DigestHash> &live_objects, 
 					const std::vector<uint32_t> &packs_to_compact);
 
 private:
