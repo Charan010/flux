@@ -7,11 +7,11 @@
 #include <unordered_set>
 #include <vector>
 
+#include "hashing/digest.h"
 #include "storage/index.h"
 
 
 struct PackStats{
-
 	uint64_t live_objects = 0;
 	uint64_t garbage_objects = 0;
 	uint64_t live_bytes = 0;
@@ -26,23 +26,19 @@ struct GcReport {
     uint64_t total_garbage_bytes   = 0;
     std::unordered_map<uint32_t, PackStats> per_pack;
 
-    /* Chunks which are referenced by manifests but actually not present in the index_ so these are just stored
-		in this vector instead of trying to delete something which doesnt exist.
-	*/
-    std::vector<std::string> dangling;
-	
+    /* Digests a manifest references but the index does not contain. */
+    std::vector<Digest> dangling;
 };
 
 class GcScanner{
 public:
 	explicit GcScanner(const Index &index);
 
-	std::unordered_set<std::string> collect_live_objects(const std::filesystem::path &manifest_dir) const;
-	GcReport analyze(const std::unordered_set<std::string> &live_objects) const;
+	std::unordered_set<Digest, DigestHash> collect_live_objects(const std::filesystem::path &manifest_dir) const;
+	GcReport analyze(const std::unordered_set<Digest, DigestHash> &live_objects) const;
 
 	std::vector<uint32_t> select_packs_for_compaction(const GcReport &report, double min_garbage_ratio) const;
 
 private:
 	const Index &index_;
-
 };

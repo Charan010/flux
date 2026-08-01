@@ -19,6 +19,8 @@ namespace {
 		throw std::runtime_error("invalid hex character in digest");
 	}
 
+}
+
 
 	std::string to_hex(const Digest &d){
     	std::string out(d.size() * 2, '\0');
@@ -40,4 +42,3 @@ namespace {
     	return d;
 	}
 
-}

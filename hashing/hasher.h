@@ -1,9 +1,6 @@
 #pragma once
 
-#include <string>
 #include "chunking/chunker.h"
+#include "digest.h"
 
-
-std::string blake3_hash(const Chunk &chunk);
-	
-
+Digest blake3_hash(const Chunk &chunk);

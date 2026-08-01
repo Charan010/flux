@@ -4,6 +4,7 @@
 #include <fstream>
 #include <stdexcept>
 
+#include "hashing/digest.h"
 #include "json.hpp"
 
 using json = nlohmann::json;
@@ -12,9 +13,9 @@ using json = nlohmann::json;
 GcScanner::GcScanner(const Index &index): index_(index) {}
 
 
-std::unordered_set<std::string> GcScanner::collect_live_objects(const std::filesystem::path &manifest_dir) const{
+std::unordered_set<Digest, DigestHash> GcScanner::collect_live_objects(const std::filesystem::path &manifest_dir) const{
 
-	std::unordered_set<std::string> live;
+	std::unordered_set<Digest, DigestHash> live;
 
 	if(!std::filesystem::exists(manifest_dir))
 		return live;
@@ -52,7 +53,11 @@ std::unordered_set<std::string> GcScanner::collect_live_objects(const std::files
                 if (!digest.is_string())
                     throw std::runtime_error("gc: non-string digest in manifest: " + where);
 
-                live.insert(digest.get<std::string>());
+                /* Manifests store hex for readability; the index is keyed on raw
+                   bytes. from_hex throws on anything that is not 64 hex chars,
+                   so a corrupt manifest fails loudly instead of inserting a key
+                   that silently matches nothing. */
+                live.insert(from_hex(digest.get<std::string>()));
             }
         }
     }
@@ -64,7 +69,7 @@ std::unordered_set<std::string> GcScanner::collect_live_objects(const std::files
 /* Walks through all live objects and keeps track of stats like how many live bytes exist in each packfile.
 	Garbage collection gets triggered for a packfile when dead bytes percentage reaches x threshold.
 */
-GcReport GcScanner::analyze(const std::unordered_set<std::string> &live_objects) const{
+GcReport GcScanner::analyze(const std::unordered_set<Digest, DigestHash> &live_objects) const{
 
 	GcReport report;
 

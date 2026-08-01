@@ -1,24 +1,15 @@
 #include "hasher.h"
-
 #include <blake3.h>
-#include <iomanip>
-#include <sstream>
 
-
-std::string blake3_hash(const Chunk &chunk){
+Digest blake3_hash(const Chunk &chunk){
 
 	blake3_hasher hasher;
 	blake3_hasher_init(&hasher);
-
 	blake3_hasher_update(&hasher, chunk.bytes.data(), chunk.bytes.size());
-    uint8_t digest[BLAKE3_OUT_LEN];
-    blake3_hasher_finalize(&hasher, digest, BLAKE3_OUT_LEN);
-
-    std::stringstream ss;
-
-    for (size_t i = 0; i < BLAKE3_OUT_LEN; i++)
-        ss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(digest[i]);
-    
-
-    return ss.str();
+ 
+	Digest digest{};
+	static_assert(BLAKE3_OUT_LEN == 32, "Digest assumes a 32-byte BLAKE3 output");
+	blake3_hasher_finalize(&hasher, digest.data(), digest.size());
+ 
+	return digest;
 }

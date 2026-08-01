@@ -10,7 +10,7 @@
 #include <iomanip>
 
 #include <unistd.h>
-#include "core/dedup_engine.h"
+#include "core/snapshot_store.h"
 
 namespace fs = std::filesystem;
 namespace {
@@ -36,7 +36,7 @@ namespace {
     	return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 	}
 
-	std::string hash_file(const fs::path &path){
+	Digest hash_file(const fs::path &path){
 
 		std::ifstream in(path, std::ios::binary);
 		std::vector<uint8_t> buf(std::istreambuf_iterator<char>(in), {});
@@ -66,7 +66,7 @@ namespace {
 	}
 }
 
-void run_bench(DedupEngine &engine, const std::string store, const std::string &corpus_path){
+void run_bench(SnapshotStore &engine, const std::string store, const std::string &corpus_path){
 
 	const fs::path corpus = corpus_path;
 

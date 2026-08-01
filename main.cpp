@@ -9,7 +9,7 @@
 
 #include "bench.h"
 #include "dedup_bench.h"
-#include "core/dedup_engine.h"
+#include "core/snapshot_store.h"
 
 namespace fs = std::filesystem;
 
@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
 
     try {
 
-        DedupEngine engine(store);
+        SnapshotStore engine(store);
         print_banner(store);
 
         std::string line;

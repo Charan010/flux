@@ -16,7 +16,8 @@ pkg_check_modules(ZSTD REQUIRED libzstd)
 
 add_executable(relic
     main.cpp
-    core/dedup_engine.cpp
+    core/snapshot_store.cpp
+    hashing/digest.cpp
     chunking/chunker.cpp
     hashing/hasher.cpp
     storage/index.cpp
@@ -25,7 +26,6 @@ add_executable(relic
     io/mmap_file.cpp
     threadpool/threadpool.cpp
     codecs/codec.cpp
-    codecs/lz4/lz4.cpp    
 	bench.cpp
 	dedup_bench.cpp
 )

@@ -11,7 +11,7 @@
 
 #include <unistd.h>
 
-#include "core/dedup_engine.h"
+#include "core/snapshot_store.h"
 #include "bench.h"
 
 namespace fs = std::filesystem;
@@ -100,7 +100,7 @@ namespace {
 }
 
 
-void run_dedup_bench(DedupEngine &engine, const std::string &store, const std::string &corpus_path){
+void run_dedup_bench(SnapshotStore &engine, const std::string &store, const std::string &corpus_path){
 
 	const fs::path corpus = corpus_path;
 	
