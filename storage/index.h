@@ -30,8 +30,13 @@ public:
     void load();
     void save() const;
 
-    auto begin() const { return table_.begin(); }
-    auto end()   const { return table_.end();   }
+    auto begin()const{
+		 return table_.begin(); 
+	}
+	
+    auto end() const{
+		 return table_.end();   
+	}
 
 private:
 

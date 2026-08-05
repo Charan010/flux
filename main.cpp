@@ -23,7 +23,8 @@ void print_banner(const std::string &store) {
               << "type 'help' for commands, 'exit' to quit\n\n";
 }
 
-void print_help() {
+void print_help(){
+	
     std::cout <<
         "  backup  <path> <name>    snapshot a file or directory\n"
         "  restore <name> <path>    materialize a snapshot\n"
