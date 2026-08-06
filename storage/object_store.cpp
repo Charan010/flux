@@ -15,7 +15,7 @@
 
 
 ObjectStore::ObjectStore(const std::string &store_directory, uint64_t max_pack_size)
-    : store_directory_(store_directory), packs_directory_(store_directory_ / "packs"), index_(store_directory_ / "index.bin"),
+    : store_directory_(store_directory), packs_directory_(store_directory_ / "packs"), index_(store_directory_),
 	  max_pack_size_(max_pack_size), current_pack_id_(0), current_pack_offset_(0) {
  
 
@@ -38,16 +38,16 @@ ObjectStore::ObjectStore(const std::string &store_directory, uint64_t max_pack_s
 }
 
 
-ObjectStore::~ObjectStore() {
-    if (current_pack_.is_open())
-        current_pack_.flush();
- 
-    save_index();
- 
-	if(lock_fd_ >= 0)
-		close(lock_fd_);	
-}
+ObjectStore::~ObjectStore(){
+	try{
+		sync();
+	}
 
+	catch(...) {}
+
+	if(lock_fd_ >= 0)
+		::close(lock_fd_);
+}
 
 std::filesystem::path ObjectStore::pack_path(uint32_t pack_id) const {
     char name[32];
@@ -198,9 +198,30 @@ Chunk ObjectStore::load(const Digest &digest) const {
 }
 
 
-void ObjectStore::save_index() const {
+void ObjectStore::sync_current_pack(){
+
+	if(!current_pack_.is_open())
+		return;
+
+	current_pack_.flush();
+
+	 if (!current_pack_)
+        throw std::runtime_error("failed to flush pack file");
+
+    fsync_file(pack_path(current_pack_id_));
+}
+
+
+void ObjectStore::sync() {
     std::lock_guard<std::mutex> lock(mutex_);
-    index_.save();
+    sync_current_pack();
+    index_.maybe_checkpoint();
+}
+
+void ObjectStore::checkpoint() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sync_current_pack();
+    index_.checkpoint();
 }
 
 
@@ -269,12 +290,14 @@ uint64_t ObjectStore::compact(const std::unordered_set<Digest, DigestHash> &live
         index_.insert(object, moved);
     }
  
-    current_pack_.flush();
- 
+    sync_current_pack();
+    index_.checkpoint();
+
     for (uint32_t id : targets)
         std::filesystem::remove(pack_path(id));
- 
-    index_.save();
+
+    fsync_dir(packs_directory_);
+
     return reclaimed;
 }
  

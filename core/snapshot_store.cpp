@@ -134,7 +134,7 @@ void SnapshotStore::backup(const std::string &input_path, const std::string &sna
     if (is_directory) {
         for (const auto &e : fs::recursive_directory_iterator(root))
             if (e.is_regular_file())
-                targets.emplace_back(e.path(), fs::relative(e.path(), root).generic_string());
+                targets.emplace_back(e.path(), e.path().lexically_relative(root).generic_string());
     } else {
         targets.emplace_back(root, root.filename().generic_string());
     }

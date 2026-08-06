@@ -15,7 +15,7 @@ enum class WalOp: uint8_t {
 
 struct WalRecord{
 
-	uint8_t op;
+	WalOp op;
 	uint64_t lsn;
 	Digest digest;
 	ObjectLocation location;

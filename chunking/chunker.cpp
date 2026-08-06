@@ -1,9 +1,6 @@
 #include "chunker.h"
 
 
-constexpr size_t kMaxChunk = 1u << 20;   // 1 MB hard cap
-constexpr size_t kMinChunk = 2u << 10; //2 KB minimum chunk
-
 Chunker::Chunker(const uint8_t *data, size_t size, size_t window, uint64_t base, uint64_t mask)
     : data_(data), size_(size), pos_(0), window_(window), base_(base), mask_(mask), highest_power_(1){
 
@@ -42,7 +39,7 @@ bool Chunker::next_chunk(Chunk &chunk){
             hash += incoming;
         }
 
-        if(window_len >= kMinChunk && ((hash & mask_) == 0 || window_len >= kMaxChunk))
+        if(window_len >= Config::min_chunk_size && ((hash & mask_) == 0 || window_len >=Config::max_chunk_size))
     		break; 
     }
 

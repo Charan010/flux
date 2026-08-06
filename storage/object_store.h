@@ -12,6 +12,7 @@
 #include "hashing/hasher.h"
 #include "hashing/digest.h"
 #include "index.h"
+#include "io/durability.h"
 
 class ObjectStore {
 
@@ -30,6 +31,9 @@ public:
 
     uint64_t compact(const std::unordered_set<Digest, DigestHash> &live_objects, 
 					const std::vector<uint32_t> &packs_to_compact);
+
+	void checkpoint();
+	void sync();
 
 private:
 
@@ -54,4 +58,6 @@ private:
     void open_pack_for_append(uint32_t pack_id);
     void rotate_pack_if_needed(uint64_t incoming_size);
     uint32_t find_latest_packId() const;
+
+	void sync_current_pack();
 };

@@ -175,7 +175,14 @@ void Wal::commit() {
 	staged_.clear();
 }
 
-/* clears the staged container and truncates the index.bin file*/
+/* 
+* clears the staged entries and truncates the index.bin file.
+
+* This function is only invoked when a checkpoint is succesfully written and atomically swapped with actual checkpoint file and
+* then Wal file is safe to be truncated as the checkpoint now stores the state of data at this time.
+
+
+*/
 void Wal::reset() {
 
 	staged_.clear();
