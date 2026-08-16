@@ -12,6 +12,7 @@
  
 #include "chunking/chunker.h"
 #include "gc/gc.h"
+#include "io/durability.h"
 #include "io/mmap_file.h"
 #include "json.hpp"
  
@@ -30,20 +31,6 @@ namespace {
 			out.push_back(to_hex(d));
 
 		return out;
-	}
-
-	void fsync_path(const fs::path &path){
-
-		const int fd = ::open(path.c_str(), O_RDONLY);
-
-		if(fd < 0)
-			throw std::runtime_error("fsync: cannot open: " + path.string());
-
-		const int rc = ::fsync(fd);
-		::close(fd);
-
-		if (rc != 0)
-        throw std::runtime_error("fsync failed for " + path.string());
 	}
 
 	void validate_snapshot_name(const std::string &name){
@@ -134,7 +121,7 @@ void SnapshotStore::backup(const std::string &input_path, const std::string &sna
     if (is_directory) {
         for (const auto &e : fs::recursive_directory_iterator(root))
             if (e.is_regular_file())
-                targets.emplace_back(e.path(), e.path().lexically_relative(root).generic_string());
+                targets.emplace_back(e.path(), fs::relative(e.path(), root).generic_string());
     } else {
         targets.emplace_back(root, root.filename().generic_string());
     }
@@ -158,7 +145,7 @@ void SnapshotStore::backup(const std::string &input_path, const std::string &sna
         });
  
  
-    store_.save_index();
+    store_.sync();
  
     const fs::path tmp = manifest_file.string() + ".tmp";
  
@@ -174,9 +161,9 @@ void SnapshotStore::backup(const std::string &input_path, const std::string &sna
             throw std::runtime_error("failed while writing manifest: " + snapshot_name);
     }
  
-    fsync_path(tmp);                    
+    fsync_file(tmp);                    
     fs::rename(tmp, manifest_file);     
-    fsync_path(manifests_dir_);         
+    fsync_dir(manifests_dir_);         
 }
  
 void SnapshotStore::restore(const std::string &snapshot_name, const std::string &output_path) const {
@@ -231,7 +218,7 @@ void SnapshotStore::gc(bool dry_run) {
  
     constexpr double min_garbage_ratio = 0.5;
  
-    GcScanner scanner(store_.index());
+    GcScanner scanner(store_.index(), store_.packs_directory());
     const auto live   = scanner.collect_live_objects(manifests_dir_);
     const auto report = scanner.analyze(live);
     const auto packs  = scanner.select_packs_for_compaction(report, min_garbage_ratio);
@@ -254,4 +241,70 @@ void SnapshotStore::gc(bool dry_run) {
     const uint64_t reclaimed = store_.compact(live, packs);
     std::cout << "gc: compacted " << packs.size() << " pack(s), reclaimed "
               << reclaimed << " bytes\n";
+}
+
+void SnapshotStore::remove_snapshot(const std::string &snapshot_name) {
+
+	const fs::path path = manifest_path(snapshot_name);   /* validates the name */
+
+	if (!fs::exists(path))
+		throw std::runtime_error("no such snapshot: " + snapshot_name);
+
+	fs::remove(path);
+	fsync_dir(manifests_dir_);
+}
+
+
+/*
+ * Checks the store and optionally repairs the index.
+ *
+ * Two directions matter and they mean different things:
+ *
+ *   orphan    in a pack, in no manifest   -- leaked by a crash, GC reclaims it
+ *   dangling  in a manifest, in no pack   -- real data loss, that snapshot is
+ *                                            unrestorable and always will be
+ *
+ * Only the second is a problem no tool can fix, so it is what fsck reports
+ * loudest.
+ */
+SnapshotStore::FsckReport SnapshotStore::fsck(bool rebuild, bool verify_payloads) {
+
+	FsckReport report;
+
+	if (rebuild)
+		report.rebuild = store_.rebuild_index_from_packs(verify_payloads);
+
+	if (!fs::exists(manifests_dir_))
+		return report;
+
+	for (const auto &entry : fs::directory_iterator(manifests_dir_)) {
+
+		if (!entry.is_regular_file())
+			continue;
+
+		++report.snapshots;
+
+		std::ifstream in(entry.path());
+		json manifest;
+		in >> manifest;
+
+		bool broken = false;
+
+		for (const auto &file : manifest["files"])
+			for (const auto &hex : file["chunks"]) {
+
+				const Digest digest = from_hex(hex.get<std::string>());
+				++report.live_chunks;
+
+				if (!store_.contains(digest)) {
+					++report.dangling;
+					broken = true;
+				}
+			}
+
+		if (broken)
+			report.broken_snapshots.push_back(entry.path().filename().string());
+	}
+
+	return report;
 }

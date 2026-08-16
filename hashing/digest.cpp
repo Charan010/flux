@@ -6,18 +6,18 @@ namespace {
 
 	constexpr char kHexDigits[] = "0123456789abcdef";
 
-	uint8_t nibble(char c){
-		if(c >= 'A' && c <= 'Z')
-			return static_cast<uint8_t>(c - 'A' + 10);
+	uint8_t nibble(char c) {
+    if (c >= '0' && c <= '9')
+        return static_cast<uint8_t>(c - '0');
 
-		if(c >='a' && c <= 'z')
-			return static_cast<uint8_t>(c - 'a' + 10);
+    if (c >= 'a' && c <= 'f')
+        return static_cast<uint8_t>(c - 'a' + 10);
 
-		if(c >= '0' && c <= '9')
-			return static_cast<uint8_t>(c - '0');
-			
-		throw std::runtime_error("invalid hex character in digest");
-	}
+    if (c >= 'A' && c <= 'F')
+        return static_cast<uint8_t>(c - 'A' + 10);
+
+    throw std::runtime_error("invalid hex character in digest");
+}
 
 }
 

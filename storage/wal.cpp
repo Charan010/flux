@@ -10,8 +10,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-/* CRC-32 (IEEE 802.3), table built once. Enough to catch a torn or
-   bit-rotted record; this is an integrity check, not a security boundary. */
+
 uint32_t crc32(const uint8_t *data, size_t len) {
 
 	static uint32_t table[256];
@@ -34,8 +33,6 @@ uint32_t crc32(const uint8_t *data, size_t len) {
 	return c ^ 0xFFFFFFFFu;
 }
 
-/* Little-endian field writers. Explicit byte order so a store written on one
-   machine is readable on another. */
 template <typename T>
 void put(uint8_t *&p, T value) {
 	for (size_t i = 0; i < sizeof(T); ++i)
@@ -62,19 +59,16 @@ void encode(const WalRecord &r, uint8_t *out) {
 
 	put<uint32_t>(p, r.location.pack_id);
 	put<uint64_t>(p, r.location.offset);
-	put<uint32_t>(p, r.location.compressed_size);
-	put<uint32_t>(p, r.location.original_size);
-	put<uint8_t>(p, static_cast<uint8_t>(r.location.codec));
 
-	put<uint32_t>(p, crc32(out, Wal::RecordSize - 4));
+	put<uint32_t>(p, crc32(out, Wal::kRecordSize - 4));
 }
 
 /* Returns false if the record fails its CRC or carries an unknown opcode. */
-bool decode(const uint8_t *in, WalRecord &r){
+bool decode(const uint8_t *in, WalRecord &r) {
 
-	const uint32_t want = crc32(in, Wal::RecordSize - 4);
+	const uint32_t want = crc32(in, Wal::kRecordSize - 4);
 
-	const uint8_t *c = in + Wal::RecordSize - 4;
+	const uint8_t *c = in + Wal::kRecordSize - 4;
 	if (get<uint32_t>(c) != want)
 		return false;
 
@@ -90,11 +84,8 @@ bool decode(const uint8_t *in, WalRecord &r){
 	std::memcpy(r.digest.data(), p, r.digest.size());
 	p += r.digest.size();
 
-	r.location.pack_id         = get<uint32_t>(p);
-	r.location.offset          = get<uint64_t>(p);
-	r.location.compressed_size = get<uint32_t>(p);
-	r.location.original_size   = get<uint32_t>(p);
-	r.location.codec           = static_cast<CodecId>(get<uint8_t>(p));
+	r.location.pack_id = get<uint32_t>(p);
+	r.location.offset  = get<uint64_t>(p);
 
 	return true;
 }
@@ -115,74 +106,46 @@ void Wal::open_for_append() {
 	if (fd_ >= 0)
 		::close(fd_);
 
-
-	/* O_APPEND resolves the offset inside the write() system call. So, two writers can never land on the same 
-	 * offset and can never interleave their data. */
-	
+	/* O_APPEND makes the concurrent writer point to the same offset and all writes are atomic.*/
 	fd_ = ::open(path_.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
-
 	if (fd_ < 0)
 		throw std::runtime_error("wal: cannot open " + path_.string());
 
 	std::error_code ec;
 	durable_bytes_ = fs::exists(path_, ec) ? fs::file_size(path_, ec) : 0;
-	if (ec) durable_bytes_ = 0;
-
+	if (ec)
+		durable_bytes_ = 0;
 }
 
-
-/* Stores the record in a buffer which is not yet durable and only persisted to disk when commit() is called. */
 void Wal::stage(WalOp op, const Digest &digest, const ObjectLocation &location, uint64_t lsn) {
 	staged_.push_back(WalRecord{op, lsn, digest, op == WalOp::Erase ? ObjectLocation{} : location});
 }
 
-
-/*
-
-* Encodes every staged record into a buffer and issues a single write and then fsync the whole batch.
-
-* fsync costs hundreds of milliseconds for every system call and syncing every chunk would put reduce the speed.
-* So, records are fsynced group wise. The tradeoff is that if the program crashes while still holding the staged records, then
-* the data is lost and not persisted to disk. 
-
-
-*/
 void Wal::commit() {
 
 	if (staged_.empty())
 		return;
 
-	std::vector<uint8_t> buf(staged_.size() * RecordSize);
+	std::vector<uint8_t> buf(staged_.size() * kRecordSize);
 
 	for (size_t i = 0; i < staged_.size(); ++i)
-		encode(staged_[i], buf.data() + i * RecordSize);
+		encode(staged_[i], buf.data() + i * kRecordSize);
 
 	size_t written = 0;
-
-	while (written < buf.size()){
-
+	while (written < buf.size()) {
 		const ssize_t n = ::write(fd_, buf.data() + written, buf.size() - written);
 		if (n < 0)
 			throw std::runtime_error("wal: write failed");
-
 		written += static_cast<size_t>(n);
 	}
 
-	if (::fdatasync(fd_) != 0)
-		throw std::runtime_error("wal: fdatasync failed");
+	if (::fsync(fd_) != 0)
+		throw std::runtime_error("wal: fsync failed");
 
 	durable_bytes_ += buf.size();
 	staged_.clear();
 }
 
-/* 
-* clears the staged entries and truncates the index.bin file.
-
-* This function is only invoked when a checkpoint is succesfully written and atomically swapped with actual checkpoint file and
-* then Wal file is safe to be truncated as the checkpoint now stores the state of data at this time.
-
-
-*/
 void Wal::reset() {
 
 	staged_.clear();
@@ -191,12 +154,11 @@ void Wal::reset() {
 		throw std::runtime_error("wal: truncate failed");
 
 	if (::fsync(fd_) != 0)
-		throw std::runtime_error("wal: fsync after truncate failed");
+	throw std::runtime_error("wal: fsync after truncate failed");
 
 	durable_bytes_ = 0;
 }
 
-/*Returns list of records by replaying the index.bin and checks for any corruption using CRC32 and torn tail. */
 std::vector<WalRecord> Wal::replay(const fs::path &path, uint64_t min_lsn) {
 
 	std::vector<WalRecord> out;
@@ -208,7 +170,6 @@ std::vector<WalRecord> Wal::replay(const fs::path &path, uint64_t min_lsn) {
 	const uint64_t size = fs::file_size(path, ec);
 	if (ec || size == 0)
 		return out;
-		
 
 	const int fd = ::open(path.c_str(), O_RDONLY);
 	if (fd < 0)
@@ -227,19 +188,19 @@ std::vector<WalRecord> Wal::replay(const fs::path &path, uint64_t min_lsn) {
 
 	uint64_t good_bytes = 0;
 
-	for (size_t off = 0; off + RecordSize <= read_total; off += RecordSize) {
+	for (size_t off = 0; off + kRecordSize <= read_total; off += kRecordSize) {
 
 		WalRecord r{};
 		if (!decode(buf.data() + off, r))
-			break;    /* torn or corrupt: everything after is unreachable */
+			break;               /* torn or corrupt: everything after is unreachable */
 
-		good_bytes = off + RecordSize;
+		good_bytes = off + kRecordSize;
 
+		
 		if (r.lsn > min_lsn)
 			out.push_back(r);
 	}
 
-	/* Trim the unusable tail so the next replay starts from a clean file. */
 	if (good_bytes < size)
 		fs::resize_file(path, good_bytes, ec);
 

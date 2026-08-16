@@ -1,6 +1,8 @@
 #include "object_store.h"
 
 #include <cstdio>
+#include <algorithm>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -11,6 +13,10 @@
  
  
 #include "codecs/codec.h"
+#include "io/durability.h"
+#include "pack_format.h"
+
+#include <chrono>
 #include "hashing/digest.h"
 
 
@@ -38,16 +44,18 @@ ObjectStore::ObjectStore(const std::string &store_directory, uint64_t max_pack_s
 }
 
 
-ObjectStore::~ObjectStore(){
-	try{
-		sync();
-	}
-
-	catch(...) {}
-
+ObjectStore::~ObjectStore() {
+    try {
+        sync();
+    } catch (...) {
+        /* destructors must not throw; staged records are lost, which only
+           costs us re-storing those chunks on the next run */
+    }
+ 
 	if(lock_fd_ >= 0)
-		::close(lock_fd_);
+		close(lock_fd_);	
 }
+
 
 std::filesystem::path ObjectStore::pack_path(uint32_t pack_id) const {
     char name[32];
@@ -92,6 +100,24 @@ void ObjectStore::open_pack_for_append(uint32_t pack_id) {
  
     current_pack_offset_ = std::filesystem::exists(path) ? std::filesystem::file_size(path) : 0;
     current_pack_id_ = pack_id;
+
+   
+    if (current_pack_offset_ == 0) {
+
+        PackHeader header;
+        header.pack_id    = pack_id;
+        header.created_at = std::chrono::duration_cast<std::chrono::seconds>(
+                                std::chrono::system_clock::now().time_since_epoch()).count();
+
+        uint8_t buf[PackHeader::kSize];
+        header.encode(buf);
+
+        current_pack_.write(reinterpret_cast<const char *>(buf), PackHeader::kSize);
+        if (!current_pack_)
+            throw std::runtime_error("failed to write pack header: " + path.string());
+
+        current_pack_offset_ = PackHeader::kSize;
+    }
 }
  
 
@@ -135,26 +161,109 @@ Digest ObjectStore::store(const Chunk &chunk) {
     if (index_.find(digest) != nullptr)
         return digest;
  
-    rotate_pack_if_needed(compressed.size());
-    uint64_t offset = current_pack_offset_;
- 
+    ObjectHeader header;
+    header.codec         = codec;
+    header.original_size = static_cast<uint32_t>(chunk.bytes.size());
+    header.stored_size   = static_cast<uint32_t>(compressed.size());
+    header.digest        = digest;
+    header.payload_crc   = pack_crc32(compressed.data(), compressed.size());
+
+    uint8_t header_bytes[ObjectHeader::kSize];
+    header.encode(header_bytes);
+
+    rotate_pack_if_needed(ObjectHeader::kSize + compressed.size());
+    const uint64_t offset = current_pack_offset_;
+
+    current_pack_.write(reinterpret_cast<const char *>(header_bytes), ObjectHeader::kSize);
     current_pack_.write(reinterpret_cast<const char *>(compressed.data()),
                         static_cast<std::streamsize>(compressed.size()));
+
     if (!current_pack_)
         throw std::runtime_error("Failed to write chunk to pack file.");
- 
-    current_pack_offset_ += compressed.size();
- 
+
+    current_pack_offset_ += ObjectHeader::kSize + compressed.size();
+
     ObjectLocation location{};
     location.pack_id = current_pack_id_;
-    location.offset = offset;
-    location.compressed_size = static_cast<uint32_t>(compressed.size());
-    location.original_size = static_cast<uint32_t>(chunk.bytes.size());
-    location.codec = codec;
- 
+    location.offset  = offset;
+
     index_.insert(digest, location);
     return digest;
  
+}
+
+
+
+ObjectStore::RebuildReport ObjectStore::rebuild_index_from_packs(bool verify_payloads) {
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    RebuildReport report;
+    index_.reset_for_rebuild();
+
+    std::vector<std::filesystem::path> packs;
+    for (const auto &entry : std::filesystem::directory_iterator(packs_directory_))
+        if (entry.path().filename().string().rfind("pack_", 0) == 0)
+            packs.push_back(entry.path());
+
+    /* Ascending pack id, so a later copy of a digest overwrites an earlier one. */
+    std::sort(packs.begin(), packs.end());
+
+    for (const auto &path : packs) {
+
+        const std::string name = path.filename().string();
+
+        uint32_t pack_id = 0;
+        try {
+            pack_id = static_cast<uint32_t>(std::stoul(name.substr(5, 6)));
+        } catch (...) {
+            continue;
+        }
+
+        const PackScanResult result = scan_pack(path,
+            [&](const ObjectHeader &header, uint64_t offset) {
+                ObjectLocation location{};
+                location.pack_id = pack_id;
+                location.offset  = offset;
+                index_.insert(header.digest, location);
+                ++report.records;
+            },
+            verify_payloads);
+
+    
+        if (result.pack_id != pack_id)
+            throw std::runtime_error("pack " + name + " declares id "
+                                     + std::to_string(result.pack_id));
+
+        ++report.packs_scanned;
+
+        if (result.truncated) {
+            ++report.packs_truncated;
+            report.trailing_bytes += std::filesystem::file_size(path) - result.good_bytes;
+        }
+    }
+
+    index_.checkpoint();
+    return report;
+}
+
+
+/* Size of a whole record (header + payload) at a location, read from the pack. */
+uint64_t ObjectStore::record_size_at(const ObjectLocation &location) const {
+
+    std::ifstream in(pack_path(location.pack_id), std::ios::binary);
+    if (!in)
+        throw std::runtime_error("cannot open pack " + std::to_string(location.pack_id));
+
+    in.seekg(static_cast<std::streamoff>(location.offset));
+
+    uint8_t header_bytes[ObjectHeader::kSize];
+    in.read(reinterpret_cast<char *>(header_bytes), ObjectHeader::kSize);
+    if (!in)
+        throw std::runtime_error("short read on object header during compaction");
+
+    const ObjectHeader oh = ObjectHeader::decode(header_bytes, "compaction");
+    return ObjectHeader::kSize + oh.stored_size;
 }
 
 
@@ -182,35 +291,55 @@ Chunk ObjectStore::load(const Digest &digest) const {
  
  
     in.seekg(static_cast<std::streamoff>(location.offset));
- 
-    std::vector<uint8_t> compressed(location.compressed_size);
-    in.read(reinterpret_cast<char *>(compressed.data()), location.compressed_size);
+
+    uint8_t header_bytes[ObjectHeader::kSize];
+    in.read(reinterpret_cast<char *>(header_bytes), ObjectHeader::kSize);
+    if (!in)
+        throw std::runtime_error("Failed to read object header: " + to_hex(digest));
+
+    const ObjectHeader header = ObjectHeader::decode(header_bytes, to_hex(digest));
+
+    /* packfiles are self contained. Index tells the metadata of the object. So, if there is any conflict
+	 * and packfile is storing different metadata. Then reject it.
+	*/
+    if (header.digest != digest)
+        throw std::runtime_error("pack holds a different object at this offset: " + to_hex(digest));
+
+    std::vector<uint8_t> compressed(header.stored_size);
+    in.read(reinterpret_cast<char *>(compressed.data()), header.stored_size);
     if (!in)
         throw std::runtime_error("Failed to read object from pack: " + to_hex(digest));
- 
+
+    if (pack_crc32(compressed.data(), compressed.size()) != header.payload_crc)
+        throw std::runtime_error("pack payload checksum mismatch: " + to_hex(digest));
+
     Chunk chunk;
-    chunk.bytes.resize(location.original_size);
- 
-    codec_decompress(location.codec, compressed.data(), compressed.size(),
+    chunk.bytes.resize(header.original_size);
+
+    codec_decompress(header.codec, compressed.data(), compressed.size(),
                      chunk.bytes.data(), chunk.bytes.size());
- 
+
     return chunk;
 }
 
 
-void ObjectStore::sync_current_pack(){
+void ObjectStore::sync_current_pack() {
+    if (!current_pack_.is_open())
+        return;
 
-	if(!current_pack_.is_open())
-		return;
-
-	current_pack_.flush();
-
-	 if (!current_pack_)
+    current_pack_.flush();
+    if (!current_pack_)
         throw std::runtime_error("failed to flush pack file");
 
     fsync_file(pack_path(current_pack_id_));
 }
 
+
+void ObjectStore::checkpoint() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sync_current_pack();
+    index_.checkpoint();
+}
 
 void ObjectStore::sync() {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -218,10 +347,9 @@ void ObjectStore::sync() {
     index_.maybe_checkpoint();
 }
 
-void ObjectStore::checkpoint() {
+void ObjectStore::save_index() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    sync_current_pack();
-    index_.checkpoint();
+    const_cast<Index &>(index_).checkpoint();
 }
 
 
@@ -255,26 +383,36 @@ uint64_t ObjectStore::compact(const std::unordered_set<Digest, DigestHash> &live
             continue;
  
         if (live_objects.find(object) == live_objects.end()) {
-            reclaimed += loc->compressed_size;
+            reclaimed += record_size_at(*loc);
             index_.erase(object);
             continue;
         }
  
         ObjectLocation moved = *loc;
-        std::vector<uint8_t> buf(moved.compressed_size);
- 
+        std::vector<uint8_t> buf;
+
         {
             std::ifstream in(pack_path(moved.pack_id), std::ios::binary);
             if (!in)
                 throw std::runtime_error("compact: cannot open pack file " + std::to_string(moved.pack_id));
- 
+
             in.seekg(static_cast<std::streamoff>(moved.offset));
-            in.read(reinterpret_cast<char *>(buf.data()), moved.compressed_size);
- 
+
+            uint8_t header_bytes[ObjectHeader::kSize];
+            in.read(reinterpret_cast<char *>(header_bytes), ObjectHeader::kSize);
+            if (!in)
+                throw std::runtime_error("compact: short read on object header");
+
+            const ObjectHeader oh = ObjectHeader::decode(header_bytes, to_hex(object));
+
+            buf.resize(ObjectHeader::kSize + oh.stored_size);
+            std::memcpy(buf.data(), header_bytes, ObjectHeader::kSize);
+
+            in.read(reinterpret_cast<char *>(buf.data() + ObjectHeader::kSize), oh.stored_size);
             if (!in)
                 throw std::runtime_error("compact: short read from pack file "+ std::to_string(moved.pack_id));
         }
- 
+
         rotate_pack_if_needed(buf.size());
         moved.pack_id = current_pack_id_;
         moved.offset = current_pack_offset_;
@@ -296,8 +434,8 @@ uint64_t ObjectStore::compact(const std::unordered_set<Digest, DigestHash> &live
     for (uint32_t id : targets)
         std::filesystem::remove(pack_path(id));
 
-    fsync_dir(packs_directory_);
+    std::filesystem::path packs_dir = packs_directory_;
+    fsync_dir(packs_dir);
 
     return reclaimed;
 }
- 

@@ -21,13 +21,14 @@ add_executable(relic
     chunking/chunker.cpp
     hashing/hasher.cpp
     storage/index.cpp
+    storage/pack_format.cpp
+    storage/wal.cpp
+    io/durability.cpp
     storage/object_store.cpp
     gc/gc.cpp
     io/mmap_file.cpp
     threadpool/threadpool.cpp
     codecs/codec.cpp
-	bench.cpp
-	dedup_bench.cpp
 )
 
 target_include_directories(relic PRIVATE

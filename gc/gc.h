@@ -20,6 +20,10 @@ struct PackStats{
 
 struct GcReport {
     uint64_t total_objects         = 0;
+    /* In a pack but not in the index: leaked by a crash between the pack write
+       and the index commit. Reclaimable, and never a correctness problem. */
+    uint64_t orphan_objects        = 0;
+    uint64_t orphan_bytes          = 0;
     uint64_t total_live_objects    = 0;
     uint64_t total_garbage_objects = 0;
     uint64_t total_live_bytes      = 0;
@@ -32,7 +36,7 @@ struct GcReport {
 
 class GcScanner{
 public:
-	explicit GcScanner(const Index &index);
+	GcScanner(const Index &index, std::filesystem::path packs_dir);
 
 	std::unordered_set<Digest, DigestHash> collect_live_objects(const std::filesystem::path &manifest_dir) const;
 	GcReport analyze(const std::unordered_set<Digest, DigestHash> &live_objects) const;
@@ -40,5 +44,6 @@ public:
 	std::vector<uint32_t> select_packs_for_compaction(const GcReport &report, double min_garbage_ratio) const;
 
 private:
-	const Index &index_;
+	const Index          &index_;
+	std::filesystem::path packs_dir_;
 };

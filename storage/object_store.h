@@ -12,7 +12,6 @@
 #include "hashing/hasher.h"
 #include "hashing/digest.h"
 #include "index.h"
-#include "io/durability.h"
 
 class ObjectStore {
 
@@ -25,15 +24,27 @@ public:
     Chunk load(const Digest &digest) const;
 
     bool contains(const Digest &digest) const;
+    /* fsync pack, then make the index durable. Never the reverse. */
+    void sync();
+    void checkpoint();
+
+    struct RebuildReport {
+        uint64_t packs_scanned   = 0;
+        uint64_t records         = 0;
+        uint64_t packs_truncated = 0;
+        uint64_t trailing_bytes  = 0;   /* unusable bytes past the last good record */
+    };
+
+    /* Discards the index and reconstructs it by scanning every pack. Possible
+       only because each record header carries its own digest. */
+    RebuildReport rebuild_index_from_packs(bool verify_payloads);
     void save_index() const;
 
     const Index &index() const { return index_; }
+    const std::filesystem::path &packs_directory() const { return packs_directory_; }
 
     uint64_t compact(const std::unordered_set<Digest, DigestHash> &live_objects, 
 					const std::vector<uint32_t> &packs_to_compact);
-
-	void checkpoint();
-	void sync();
 
 private:
 
@@ -47,6 +58,9 @@ private:
 
     Index index_;
 
+    void sync_current_pack();
+    uint64_t record_size_at(const ObjectLocation &location) const;
+
     mutable std::mutex mutex_;
 
     uint64_t max_pack_size_;
@@ -58,6 +72,4 @@ private:
     void open_pack_for_append(uint32_t pack_id);
     void rotate_pack_if_needed(uint64_t incoming_size);
     uint32_t find_latest_packId() const;
-
-	void sync_current_pack();
 };

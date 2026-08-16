@@ -6,11 +6,13 @@
 
 #include "hashing/digest.h"
 #include "json.hpp"
+#include "storage/pack_format.h"
 
 using json = nlohmann::json;
 
 
-GcScanner::GcScanner(const Index &index): index_(index) {}
+GcScanner::GcScanner(const Index &index, std::filesystem::path packs_dir)
+	: index_(index), packs_dir_(std::move(packs_dir)) {}
 
 
 std::unordered_set<Digest, DigestHash> GcScanner::collect_live_objects(const std::filesystem::path &manifest_dir) const{
@@ -69,37 +71,61 @@ std::unordered_set<Digest, DigestHash> GcScanner::collect_live_objects(const std
 /* Walks through all live objects and keeps track of stats like how many live bytes exist in each packfile.
 	Garbage collection gets triggered for a packfile when dead bytes percentage reaches x threshold.
 */
-GcReport GcScanner::analyze(const std::unordered_set<Digest, DigestHash> &live_objects) const{
+/*
+ * Walks the packs rather than the index.
+ *
+ * The index no longer stores object sizes -- they live in each record header --
+ * so sizing garbage means reading the packs anyway. Scanning them has a second
+ * payoff: it finds ORPHANS, objects physically present but absent from the
+ * index, which is exactly what a crash between the pack write and the index
+ * commit leaves behind. Iterating the index could never see them.
+ */
+GcReport GcScanner::analyze(const std::unordered_set<Digest, DigestHash> &live_objects) const {
 
 	GcReport report;
 
-	for(const auto &[digest, loc]: index_){
+	for (const auto &entry : std::filesystem::directory_iterator(packs_dir_)) {
 
-		report.total_objects++;
-		PackStats &pack = report.per_pack[loc.pack_id];
+		const std::string name = entry.path().filename().string();
+		if (name.rfind("pack_", 0) != 0)
+			continue;
 
-		bool object_found = (live_objects.find(digest) != live_objects.end()) ? true : false;
+		scan_pack(entry.path(), [&](const ObjectHeader &oh, uint64_t offset) {
 
-		if(object_found){
+			const uint64_t bytes = ObjectHeader::kSize + oh.stored_size;
 
-			report.total_live_objects++;
-			pack.live_objects++;
-			report.total_live_bytes += loc.compressed_size;
-			pack.live_bytes += loc.compressed_size;
+			const ObjectLocation *loc = index_.find(oh.digest);
 
-		}
-		else{
+			/* An index entry pointing elsewhere means this copy was superseded
+			   by compaction; treat the stale copy as an orphan. */
+			if (loc == nullptr || loc->offset != offset ||
+			    loc->pack_id != static_cast<uint32_t>(std::stoul(name.substr(5, 6)))) {
+				report.orphan_objects++;
+				report.orphan_bytes += bytes;
+				return;
+			}
 
-			report.total_garbage_objects++;
-			pack.garbage_objects++;
-			report.total_garbage_bytes += loc.compressed_size;
-			pack.garbage_bytes += loc.compressed_size;
-		}
+			report.total_objects++;
+			PackStats &pack = report.per_pack[loc->pack_id];
+
+			if (live_objects.find(oh.digest) != live_objects.end()) {
+				report.total_live_objects++;
+				pack.live_objects++;
+				report.total_live_bytes += bytes;
+				pack.live_bytes += bytes;
+			} else {
+				report.total_garbage_objects++;
+				pack.garbage_objects++;
+				report.total_garbage_bytes += bytes;
+				pack.garbage_bytes += bytes;
+			}
+
+		}, /*verify_payloads=*/false);
 	}
 
-	/* A digest a manifest points at but the index has never heard of. This is the
-	   inverse direction of the sweep and it is cheap, so check it: it is the only
-	   signal that a snapshot has already become unrestorable. */
+	/* A digest a manifest points at but the index has never heard of. This is
+	   the inverse direction of the sweep and it is cheap, so check it: it is
+	   the only signal that a snapshot has already become unrestorable. */
 	for (const auto &digest : live_objects)
 		if (index_.find(digest) == nullptr)
 			report.dangling.push_back(digest);
